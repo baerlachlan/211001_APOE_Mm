@@ -9,6 +9,8 @@ config = ASEAnalysis(
     fastq_ext=".fastq.gz"
 )
 
+localrules: refs_downloadFa, refs_downloadGtf
+
 rule all:
 	input:
 		config.outputs

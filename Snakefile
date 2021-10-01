@@ -5,7 +5,8 @@ config = ASEAnalysis(
     species="mus_musculus",
     assembly="GRCm39",
     ensembl_release=104,
-    read_length=50
+    read_length=50,
+    fastq_ext=".fastq.gz"
 )
 
 rule all:

@@ -1,13 +1,13 @@
 rule fastqc_raw:
 	input:
-		"00_rawData/fastq/{SAMPLE}.fastq.gz"
+		"00_rawData/fastq/{SAMPLE}" + config.fastq_ext
 	output:
 		"00_rawData/FastQC/{SAMPLE}_fastqc.zip",
 		"00_rawData/FastQC/{SAMPLE}_fastqc.html"
 	params:
 		outDir = "00_rawData/FastQC/"
 	conda:
-		"../envs/ase.yaml"
+		"../envs/gatk.yaml"
 	resources:
 		cpu = 1,
 		ntasks = 1,

@@ -1,0 +1,9 @@
+## Large project files
+*.fastq.gz
+*.fa
+## Unrequired project files
+
+## Snakemake related
+.snakemake/
+smk/log/
+*__pycache__*

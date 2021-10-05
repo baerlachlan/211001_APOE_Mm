@@ -1,9 +1,12 @@
 ## Large project files
 *.fastq.gz
 *.fa
+*bam*
+refs/*
 ## Unrequired project files
-
-## Snakemake related
+*log*
+## Snakemake/python related
 .snakemake/
 smk/log/
 *__pycache__*
+.Rproj.user

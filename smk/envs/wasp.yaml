@@ -1,4 +1,3 @@
-## Check anaconda.org for new package versions
 channels:
  - bioconda
  - conda-forge

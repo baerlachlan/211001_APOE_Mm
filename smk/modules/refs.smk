@@ -3,11 +3,8 @@ rule refs_downloadFa:
         temp(config.ref_path)
     params:
         ref_url = config.ref_url
-    resources:
-        cpu = 1,
-        ntasks = 1,
-        mem_mb = 4000,
-        time = "00-03:00:00"
+    threads:
+        1
     shell:
         """
         curl -L {params.ref_url} | gzip -d > {output}
@@ -18,14 +15,23 @@ rule refs_downloadGtf:
         temp(config.gtf_path)
     params:
         gtf_url = config.gtf_url
-    resources:
-        cpu = 1,
-        ntasks = 1,
-        mem_mb = 4000,
-        time = "00-03:00:00"
+    threads:
+        1
     shell:
         """
-        wget -O - {params.gtf_url} | gunzip > {output}
+        curl -L {params.gtf_url} > {output}
+        """
+
+rule refs_downloadDbsnp:
+    output:
+        temp(config.dbsnp_path)
+    params:
+        dbsnp_url = config.dbsnp_url
+    threads:
+        1
+    shell:
+        """
+        curl -L {params.dbsnp_url} > {output}
         """
 
 rule refs_refDict:
@@ -67,7 +73,7 @@ rule refs_starIndex:
     params:
         overhang = config.read_length - 1
     conda:
-        "../envs/ase.yaml"
+        "../envs/gatk.yaml"
     resources:
         cpu = 16,
         ntasks = 1,

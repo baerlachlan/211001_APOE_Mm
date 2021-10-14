@@ -2,8 +2,8 @@ rule intervals:
     output:
         "refs/exons.intervals"
     params:
-        species = config.species,
-        ensembl_release = config.ensembl_release
+        species = settings.species,
+        ensembl_release = settings.ensembl_release
     conda:
         "../envs/R.yaml"
     resources:
@@ -12,4 +12,4 @@ rule intervals:
         mem_mb = 4000,
         time = "00-00:30:00"
     script:
-        "intervals.R"
+        "../scripts/intervals.R"

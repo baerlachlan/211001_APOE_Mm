@@ -9,7 +9,7 @@ rule align:
         STARgenome = temp(directory("02_align/bam/{SAMPLE}_STARgenome")),
         STARpass1 = temp(directory("02_align/bam/{SAMPLE}_STARpass1"))
     params:
-        overhang = config.read_length - 1,
+        overhang = settings.read_length - 1,
         bname = "02_align/bam/{SAMPLE}",
         bamUnsorted = "02_align/bam/{SAMPLE}Aligned.out.bam"
     conda:

@@ -1,8 +1,8 @@
 rule aseRC:
     input:
-        bam = "11_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam",
-        bamIndex = "11_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam.bai",
-        vcf = "10_callSnvs/4_selected/{SAMPLE}.vcf.gz",
+        bam = "08_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam",
+        bamIndex = "08_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam.bai",
+        vcf = "07_variants/4_selected/{SAMPLE}.vcf.gz",
         refFa = "refs/Danio_rerio.GRCz11.dna.primary_assembly.fa",
         intervals = "refs/exons.intervals"
     output:
@@ -29,9 +29,9 @@ rule aseRC:
 
 rule aseRC_nowasp:
     input:
-        bam = "09_recalBases/bam/{SAMPLE}.bam",
-        bamIndex = "09_recalBases/bam/{SAMPLE}.bai",
-        vcf = "10_callSnvs/4_selected/{SAMPLE}.vcf.gz",
+        bam = "06_bqsr/bam/{SAMPLE}.bam",
+        bamIndex = "06_bqsr/bam/{SAMPLE}.bai",
+        vcf = "07_variants/4_selected/{SAMPLE}.vcf.gz",
         refFa = "refs/Danio_rerio.GRCz11.dna.primary_assembly.fa",
         intervals = "refs/exons.intervals"
     output:

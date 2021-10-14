@@ -1,8 +1,8 @@
 rule refs_downloadFa:
     output:
-        temp(config.ref_path)
+        temp(settings.ref_path)
     params:
-        ref_url = config.ref_url
+        ref_url = settings.ref_url
     threads:
         1
     shell:
@@ -12,9 +12,9 @@ rule refs_downloadFa:
 
 rule refs_downloadGtf:
     output:
-        temp(config.gtf_path)
+        temp(settings.gtf_path)
     params:
-        gtf_url = config.gtf_url
+        gtf_url = settings.gtf_url
     threads:
         1
     shell:
@@ -24,9 +24,9 @@ rule refs_downloadGtf:
 
 rule refs_downloadDbsnp:
     output:
-        temp(config.dbsnp_path)
+        temp(settings.dbsnp_path)
     params:
-        dbsnp_url = config.dbsnp_url
+        dbsnp_url = settings.dbsnp_url
     threads:
         1
     shell:
@@ -38,7 +38,7 @@ rule refs_refDict:
     input:
         rules.refs_downloadFa.output
     output:
-        temp(config.ref_path.rstrip("fa") + "dict")
+        temp(settings.ref_path.rstrip("fa") + "dict")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -53,7 +53,7 @@ rule refs_refIndex:
     input:
         rules.refs_downloadFa.output
     output:
-        temp(config.ref_path + ".fai")
+        temp(settings.ref_path + ".fai")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -71,7 +71,7 @@ rule refs_starIndex:
     output:
         temp(directory("refs/star/"))
     params:
-        overhang = config.read_length - 1
+        overhang = settings.read_length - 1
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -93,3 +93,18 @@ rule refs_starIndex:
 
         rm temp.gtf
         """
+
+rule refs_dbsnpIndex:
+    input:
+        rules.refs_downloadDbsnp.output
+    output:
+        settings.dbsnp_path + ".tbi"
+    conda:
+        "../envs/gatk.yaml"
+    resources:
+        cpu = 1,
+        ntasks = 1,
+        mem_mb = 4000,
+        time = "00-00:10:00"
+    shell:
+        "tabix -p vcf {input}"

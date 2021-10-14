@@ -4,10 +4,10 @@ rule bqsr_firstPass:
         bamIndex = rules.splitNCigar.output.bamIndex,
         refFa = rules.refs_downloadFa.output,
         refIndex = rules.refs_refIndex.output,
-        refDict = rules.refs_refDict.output
-        refDbsnp = rules.refs_downloadDbsnp.output,
+        refDict = rules.refs_refDict.output,
+        refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        temp("09_recalBases/recal/{SAMPLE}.firstPass.table")
+        temp("06_bqsr/recal/{SAMPLE}.firstPass.table")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -27,18 +27,18 @@ rule bqsr_firstPass:
             --known-sites {input.refDbsnp}
         """
 
-rule applyRecal:
+rule bqsr_apply:
     input:
-        bam = "05_splitNCigar/bam/{SAMPLE}.bam",
-        bamIndex = "05_splitNCigar/bam/{SAMPLE}.bai",
-        refFa = "refs/Danio_rerio.GRCz11.dna.primary_assembly.fa",
-        refIndex = "refs/Danio_rerio.GRCz11.dna.primary_assembly.fa.fai",
-        refDict = "refs/Danio_rerio.GRCz11.dna.primary_assembly.dict",
-        recal = "09_recalBases/recal/{SAMPLE}.firstPass.table"
+        bam = rules.splitNCigar.output.bam,
+        bamIndex = rules.splitNCigar.output.bamIndex,
+        refFa = rules.refs_downloadFa.output,
+        refIndex = rules.refs_refIndex.output,
+        refDict = rules.refs_refDict.output,
+        recal = rules.bqsr_firstPass.output
     output:
-        bam = temp("09_recalBases/bam/{SAMPLE}.bam"),
-        bamIndex = temp("09_recalBases/bam/{SAMPLE}.bai"),
-        metrics = "09_recalBases/metrics/{SAMPLE}.tsv"
+        bam = temp("06_bqsr/bam/{SAMPLE}.bam"),
+        bamIndex = temp("06_bqsr/bam/{SAMPLE}.bai"),
+        metrics = "06_bqsr/metrics/{SAMPLE}.tsv"
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -62,17 +62,16 @@ rule applyRecal:
         samtools stats -d {output.bam} > {output.metrics}
         """
 
-rule recalSecondPass:
+rule bqsr_secondPass:
     input:
-        bam = "09_recalBases/bam/{SAMPLE}.bam",
-        bamIndex = "09_recalBases/bam/{SAMPLE}.bai",
-        refFa = "refs/Danio_rerio.GRCz11.dna.primary_assembly.fa",
-        refIndex = "refs/Danio_rerio.GRCz11.dna.primary_assembly.fa.fai",
-        refDict = "refs/Danio_rerio.GRCz11.dna.primary_assembly.dict",
-        snvs = "08_dbsnp/4_selected/{SAMPLE}_snvs.vcf.gz",
-        indels = "08_dbsnp/4_selected/{SAMPLE}_indels.vcf.gz"
+        bam = rules.bqsr_apply.output.bam,
+        bamIndex = rules.bqsr_apply.output.bamIndex,
+        refFa = rules.refs_downloadFa.output,
+        refIndex = rules.refs_refIndex.output,
+        refDict = rules.refs_refDict.output,
+        refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        temp("09_recalBases/recal/{SAMPLE}.secondPass.table")
+        temp("06_bqsr/recal/{SAMPLE}.secondPass.table")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -89,16 +88,15 @@ rule recalSecondPass:
             -R {input.refFa} \
             -I {input.bam} \
             -O {output} \
-            --known-sites {input.snvs} \
-            --known-sites {input.indels}
+            --known-sites {input.refDbsnp}
         """
 
-rule analyzeCovariates:
+rule bqsr_analyzeCovariates:
     input:
-        firstPass = "09_recalBases/recal/{SAMPLE}.firstPass.table",
-        secondPass = "09_recalBases/recal/{SAMPLE}.secondPass.table"
+        firstPass = rules.bqsr_firstPass.output,
+        secondPass = rules.bqsr_secondPass.output
     output:
-        csv = "09_recalBases/recal/{SAMPLE}.analyzeCovariates.csv"
+        "06_bqsr/recal/{SAMPLE}.analyzeCovariates.csv"
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -111,5 +109,5 @@ rule analyzeCovariates:
         gatk AnalyzeCovariates \
             -before {input.firstPass} \
              -after {input.secondPass} \
-             -csv {output.csv}
+             -csv {output}
         """

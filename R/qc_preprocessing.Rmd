@@ -1,0 +1,166 @@
+---
+title: "Quality control - preprocessing"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    fig_width: 8
+    fig_height: 6
+    fig_align: "center"
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r knitr, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  error = FALSE, 
+  fig.align = "center"
+)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+# Setup 
+
+```{r packages}
+suppressPackageStartupMessages({
+  ## Common
+  library(tidyverse)
+  library(magrittr)
+  library(future.apply)
+  library(here)
+  library(AnnotationHub)
+  library(purrr)
+  library(scales)
+  library(kableExtra)
+  library(tictoc)
+  library(ggrepel)
+  library(RColorBrewer)
+  library(ggpubr)
+  library(pander)
+  library(rmarkdown)
+  ## Project specific
+  library(UpSetR)
+  library(SeqArray)
+  library(ngsReports)
+})
+```
+
+```{r options}
+if (interactive()) setwd(here::here())
+theme_set(theme_bw())
+```
+
+## Snakemake
+
+This R Markdown document was built with the intention to be executed as part of a snakemake workflow.
+When executed with snakemake, the document requires no user input.
+However interactive execution is also supported, but requires manual user input in the below chunk:
+
+```{r interactive_setup}
+## If running interactively, edit the variables below
+if (!exists("snakemake")) {
+  ens_species <- "Mus musculus"
+  ens_release <- "104"
+  proj_root <- "/hpcfs/users/a1647910/211001_APOE_Mm_ASE"
+  raw_dir <- "00_rawData"
+  trim_dir <- "01_trim"
+  align_dir <- "02_align"
+}
+```
+
+```{r snakemake_setup}
+## Setup when executed via snakemake
+if (exists("snakemake")) {
+  ens_species <- snakemake@settings[["species"]] %>%
+    str_replace("_", " ") %>%
+    str_to_sentence()
+  ens_release <- snakemake@settings[["ensembl_release"]] %>%
+    as.character()
+  proj_root <- snakemake@settings[["proj_root"]]
+  raw_dir <- snakemake@settings[["raw_dir"]]
+  trim_dir <- snakemake@settings[["trim_dir"]]
+  align_dir <- snakemake@settings[["align_dir"]]
+}
+```
+
+# Pre-processing
+
+## Raw data
+
+```{r}
+rawFqc <- list.files(
+  path = file.path(proj_root, raw_dir, "FastQC"),
+  pattern = "zip",
+  full.names = TRUE
+) %>%
+  subset(str_detect(., "L001")) %>%
+  FastqcDataList()
+```
+
+### Library sizes
+
+Library Sizes for the raw, unprocessed dataset ranged between `r pander(comma(range(readTotals(rawFqc)$Total_Sequences)))` reads.
+
+```{r, fig.cap="*Read totals for all libraries sequenced on lane 1. Lane 2 libraries are excluded for ease of viewing.*"}
+plotReadTotals(rawFqc)
+```
+
+### GC content
+
+```{r, fig.cap="*GC content distributions for all samples. Hover for more details.*"}
+# species_short <- 
+ens_species %>%
+  str_split(" ") %>%
+  unlist() %>%
+  with(.[1])
+plotly::ggplotly({
+  plotGcContent(
+    x = rawFqc, 
+    plotType = "line",
+    gcType = "Transcriptome",
+    species = "Drerio"
+  ) +
+    theme(legend.position = "none")
+})
+```
+
+## Trimmed data
+
+Trimming software was setup carefully with the intention to perform downstream detection of short variants following the `GATK` workflow.
+Part of this process involves the removal of duplicate reads which relies on detection of duplicates by comparing sequences in the 5' positions.
+Trimming can therefore be detrimental to downstream analysis.
+As such, the trimming procedure was performed more so as a filtering step, where reads were discarded if:
+
+1. 40% of the bases did not meet the threshold of a 20 phred quality score.
+2. reads were shorter than 35 base pairs in length.
+
+```{r}
+trimFqc <- list.files(
+  path = file.path(proj_root, trim_dir, "FastQC"),
+  pattern = "zip",
+  full.names = TRUE
+) %>%
+  FastqcDataList()
+trimStats <- readTotals(rawFqc) %>%
+  dplyr::rename(Raw = Total_Sequences) %>%
+  left_join(readTotals(trimFqc), by = "Filename") %>%
+  dplyr::rename(Trimmed = Total_Sequences) %>%
+  mutate(
+    Discarded = 1 - Trimmed/Raw,
+    Retained = Trimmed / Raw
+  )
+```
+
+After trimming between `r pander(range(percent_format(0.01)(trimStats$Discarded)))` of reads were discarded.
+
+## Aligned data
+
+Trimmed reads were aligned to GRCz11 reference genome (Ensembl release 101) with `STAR 2.7.7a`.
+`STAR`'s two-pass mode was implemented to achieve better alignments around novel splice junctions.

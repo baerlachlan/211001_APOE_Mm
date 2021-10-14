@@ -1,6 +1,6 @@
 rule raw_fastqc:
     input:
-        "00_rawData/fastq/{SAMPLE}" + config.fastq_ext
+        "00_rawData/fastq/{SAMPLE}" + settings.fastq_ext
     output:
         "00_rawData/FastQC/{SAMPLE}_fastqc.zip",
         "00_rawData/FastQC/{SAMPLE}_fastqc.html"

@@ -9,7 +9,7 @@ rule addRG:
         bamIndex = temp("03_addRG/bam/{SAMPLE}.bai"),
         samstats = "03_addRG/samstats/{SAMPLE}.tsv"
     params:
-        read_group = lambda wildcard: config.read_groups[wildcard.SAMPLE]
+        read_group = lambda wildcard: settings.read_groups[wildcard.SAMPLE]
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -26,8 +26,8 @@ rule addRG:
             -SORT_ORDER coordinate \
             -RGID {params.read_group} \
             -RGPU null \
-            -RGSM null \
-            -RGPL null \
+            -RGSM {wildcards.SAMPLE} \
+            -RGPL Illumina \
             -RGLB null \
             -CREATE_INDEX True
 

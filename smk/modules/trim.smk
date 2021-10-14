@@ -1,10 +1,10 @@
 rule trim:
     input:
-        R1 = "00_rawData/fastq/{SAMPLE}" + config.read_pairs[0] + config.fastq_ext,
-        R2 = "00_rawData/fastq/{SAMPLE}" + config.read_pairs[1] + config.fastq_ext
+        R1 = "00_rawData/fastq/{SAMPLE}" + settings.read_pairs[0] + settings.fastq_ext,
+        R2 = "00_rawData/fastq/{SAMPLE}" + settings.read_pairs[1] + settings.fastq_ext
     output:
-        R1 = temp("01_trim/fastq/{SAMPLE}" + config.read_pairs[0] + config.fastq_ext),
-        R2 = temp("01_trim/fastq/{SAMPLE}" + config.read_pairs[1] + config.fastq_ext),
+        R1 = temp("01_trim/fastq/{SAMPLE}" + settings.read_pairs[0] + settings.fastq_ext),
+        R2 = temp("01_trim/fastq/{SAMPLE}" + settings.read_pairs[1] + settings.fastq_ext),
         html = "01_trim/log/{SAMPLE}.html"
     conda:
         "../envs/gatk.yaml"
@@ -30,7 +30,7 @@ rule trim:
 
 rule trim_fastqc:
     input:
-        "01_trim/fastq/{SAMPLE}" + config.fastq_ext
+        "01_trim/fastq/{SAMPLE}" + settings.fastq_ext
     output:
         "01_trim/FastQC/{SAMPLE}_fastqc.zip",
         "01_trim/FastQC/{SAMPLE}_fastqc.html"

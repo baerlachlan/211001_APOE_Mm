@@ -9,3 +9,10 @@ dependencies:
  - pytables=3.6.1
  - star=2.7.7a
  - samtools=1.11
+ - r-base
+ - r-magrittr
+ - r-stringr
+ - r-dplyr
+ - r-readr
+ - r-digest
+ - bioconductor-seqarray

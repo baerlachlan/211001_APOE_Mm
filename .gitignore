@@ -3,10 +3,18 @@
 *.fa
 *bam*
 refs/*
-## Unrequired project files
-*log*
-## Snakemake/python related
+*.gds
+*.vcf.gz
+*.vcf.gz.tbi
+01_trim/log/*
+02_align/log/*
+08_wasp/*
+## Other project files
+# *log*
+*.firstPass.table
+*.secondPass.table
+.Rproj.user
+## Snakemake or python related
 .snakemake/
 smk/log/
 *__pycache__*
-.Rproj.user

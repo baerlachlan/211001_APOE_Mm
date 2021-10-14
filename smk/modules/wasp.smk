@@ -1,15 +1,33 @@
-rule findIntersecting:
-    input:
-        bam = "09_recalBases/bam/{SAMPLE}.bam",
-        snpDir = "11_wasp/1_snvs/{SAMPLE}"
+rule wasp_snvs:
     output:
-        fq1 = temp("11_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq1.gz"),
-        fq2 = temp("11_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq2.gz"),
-        single = temp("11_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.single.fq.gz"),
-        to_remap = temp("11_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.to.remap.bam"),
-        keep_intersect = temp("11_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.keep.bam")
+        # gds = "07_variants/5_gds/{SAMPLE}.gds",
+        snvDir = directory(expand("08_wasp/1_snvs/{SAMPLE}", SAMPLE = settings.samples))
+    conda:
+        "../envs/wasp.yaml"
     params:
-        outDir = temp(directory("11_wasp/2_findIntersecting/{SAMPLE}"))
+        proj_root = settings.proj_root,
+        variants_dir = settings.variants_dir,
+        wasp_dir = settings.wasp_dir
+    resources:
+        cpu = 1,
+        ntasks = 1,
+        mem_mb = 4000,
+        time = "00-02:00:00"
+    script:
+        "../scripts/wasp_setup.R"
+
+rule wasp_findIntersecting:
+    input:
+        bam = rules.bqsr_apply.output.bam,
+        snvDir = "08_wasp/1_snvs/{SAMPLE}"
+    output:
+        fq1 = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq1.gz"),
+        fq2 = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq2.gz"),
+        single = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.single.fq.gz"),
+        to_remap = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.to.remap.bam"),
+        keep_intersect = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.keep.bam")
+    params:
+        outDir = temp(directory("08_wasp/2_findIntersecting/{SAMPLE}"))
     conda:
         "../envs/wasp.yaml"
     resources:
@@ -23,24 +41,24 @@ rule findIntersecting:
             --is_paired_end \
             --is_sorted \
             --output_dir {params.outDir} \
-            --snp_dir {input.snpDir} \
+            --snp_dir {input.snvDir} \
             {input.bam}
         """
 
-rule remap:
+rule wasp_remap:
     input:
-        fq1 = "11_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq1.gz",
-        fq2 = "11_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq2.gz",
-        starIndex = "refs/star/"
+        fq1 = rules.wasp_findIntersecting.output.fq1,
+        fq2 = rules.wasp_findIntersecting.output.fq2,
+        starIndex = rules.refs_starIndex.output
     output:
-        remapped_unsorted = temp("11_wasp/3_remap/{SAMPLE}Aligned.out.bam"),
-        remapped_sorted = temp("11_wasp/3_remap/{SAMPLE}sorted.out.bam"),
-        index = temp("11_wasp/3_remap/{SAMPLE}sorted.out.bam.bai"),
-        STARgenome = temp(directory("11_wasp/3_remap/{SAMPLE}_STARgenome")),
-        STARpass1 = temp(directory("11_wasp/3_remap/{SAMPLE}_STARpass1"))
+        remapped_unsorted = temp("08_wasp/3_remap/{SAMPLE}Aligned.out.bam"),
+        remapped_sorted = temp("08_wasp/3_remap/{SAMPLE}sorted.out.bam"),
+        index = temp("08_wasp/3_remap/{SAMPLE}sorted.out.bam.bai"),
+        STARgenome = temp(directory("08_wasp/3_remap/{SAMPLE}_STARgenome")),
+        STARpass1 = temp(directory("08_wasp/3_remap/{SAMPLE}_STARpass1"))
     params:
-        overhang = READ_LEN-1,
-        bname = "11_wasp/3_remap/{SAMPLE}"
+        overhang = settings.read_length - 1,
+        bname = "08_wasp/3_remap/{SAMPLE}"
     conda:
         "../envs/wasp.yaml"
     resources:
@@ -60,21 +78,21 @@ rule remap:
             --twopassMode Basic \
             --outFileNamePrefix {params.bname}
 
-        mkdir -p 11_wasp/3_remap/log
-        mv {params.bname}*out 11_wasp/3_remap/log
-        mv {params.bname}*tab 11_wasp/3_remap/log
+        mkdir -p 08_wasp/3_remap/log
+        mv {params.bname}*out 08_wasp/3_remap/log
+        mv {params.bname}*tab 08_wasp/3_remap/log
 
         samtools sort -o {output.remapped_sorted} {output.remapped_unsorted}
         samtools index {output.remapped_sorted}
         """
 
-rule filterRemapped:
+rule wasp_filterRemapped:
     input:
-        to_remap = "11_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.to.remap.bam",
-        remapped_unsorted = "11_wasp/3_remap/{SAMPLE}Aligned.out.bam",
-        remapped_sorted = "11_wasp/3_remap/{SAMPLE}sorted.out.bam"
+        to_remap = rules.wasp_findIntersecting.output.to_remap,
+        remapped_unsorted = rules.wasp_remap.output.remapped_unsorted,
+        remapped_sorted = rules.wasp_remap.output.remapped_sorted
     output:
-        keep_filter = temp("11_wasp/4_filterRemapped/{SAMPLE}.keep.bam")
+        keep_filter = temp("08_wasp/4_filterRemapped/{SAMPLE}.keep.bam")
     conda:
         "../envs/wasp.yaml"
     resources:
@@ -90,14 +108,15 @@ rule filterRemapped:
             {output.keep_filter}
         """
 
-rule merge:
+rule wasp_merge:
     input:
-        keep_filter = "11_wasp/4_filterRemapped/{SAMPLE}.keep.bam",
-        keep_intersect = "11_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.keep.bam"
+        keep_filter = rules.wasp_filterRemapped.output.keep_filter,
+        keep_intersect = rules.wasp_findIntersecting.output.keep_intersect
     output:
-        keep_merged = temp("11_wasp/5_merge/{SAMPLE}.keep.merge.bam"),
-        keep_sorted = temp("11_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam"),
-        keep_sortedIndex = temp("11_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam.bai")
+        keep_sorted = temp("08_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam"),
+        keep_sortedIndex = temp("08_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam.bai")
+    params:
+        keep_merged = temp("08_wasp/5_merge/{SAMPLE}.keep.merge.bam")
     conda:
         "../envs/wasp.yaml"
     resources:
@@ -107,10 +126,11 @@ rule merge:
         time = "00-02:00:00"
     shell:
         """
-        samtools merge {output.keep_merged} \
+        samtools merge {params.keep_merged} \
             {input.keep_filter} \
             {input.keep_intersect}
         samtools sort -o {output.keep_sorted} \
-            {output.keep_merged}
+            {params.keep_merged}
         samtools index {output.keep_sorted}
+        rm {params.keep_merged}
         """

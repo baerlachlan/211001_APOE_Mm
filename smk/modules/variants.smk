@@ -8,12 +8,12 @@ rule variants_call:
         refDbsnp = rules.refs_downloadDbsnp.output,
         intervals = rules.intervals.output
     output:
-        vcf = temp("07_variants/1_called/{SAMPLE}.vcf.gz"),
-        vcfIndex = temp("07_variants/1_called/{SAMPLE}.vcf.gz.tbi"),
-        detailMetrics = "07_variants/1_called/log/{SAMPLE}.variant_calling_detail_metrics",
-        summaryMetrics = "07_variants/1_called/log/{SAMPLE}.variant_calling_summary_metrics"
+        vcf = temp(os.path.join(analysis.variants_dir, "1_called/{SAMPLE}.vcf.gz")),
+        vcfIndex = temp(os.path.join(analysis.variants_dir, "1_called/{SAMPLE}.vcf.gz.tbi")),
+        detailMetrics = os.path.join(analysis.variants_dir, "1_called/log/{SAMPLE}.variant_calling_detail_metrics"),
+        summaryMetrics = os.path.join(analysis.variants_dir, "1_called/log/{SAMPLE}.variant_calling_summary_metrics")
     params:
-        metricsBname = "07_variants/1_called/log/{SAMPLE}"
+        metricsBname = os.path.join(analysis.variants_dir, "1_called/log/{SAMPLE}")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -49,12 +49,12 @@ rule variants_extract:
         refDict = rules.refs_refDict.output,
         refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        vcf = temp("07_variants/2_extracted/{SAMPLE}.vcf.gz"),
-        vcfIndex = temp("07_variants/2_extracted/{SAMPLE}.vcf.gz.tbi"),
-        detailMetrics = "07_variants/2_extracted/log/{SAMPLE}.variant_calling_detail_metrics",
-        summaryMetrics = "07_variants/2_extracted/log/{SAMPLE}.variant_calling_summary_metrics"
+        vcf = temp(os.path.join(analysis.variants_dir, "2_extracted/{SAMPLE}.vcf.gz")),
+        vcfIndex = temp(os.path.join(analysis.variants_dir, "2_extracted/{SAMPLE}.vcf.gz.tbi")),
+        detailMetrics = os.path.join(analysis.variants_dir, "2_extracted/log/{SAMPLE}.variant_calling_detail_metrics"),
+        summaryMetrics = os.path.join(analysis.variants_dir, "2_extracted/log/{SAMPLE}.variant_calling_summary_metrics")
     params:
-        metricsBname = "07_variants/2_extracted/log/{SAMPLE}"
+        metricsBname = os.path.join(analysis.variants_dir, "2_extracted/log/{SAMPLE}")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -88,12 +88,12 @@ rule variants_filter:
         refDict = rules.refs_refDict.output,
         refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        vcf = temp("07_variants/3_filtered/{SAMPLE}.vcf.gz"),
-        vcfIndex = temp("07_variants/3_filtered/{SAMPLE}.vcf.gz.tbi"),
-        detailMetrics = "07_variants/3_filtered/log/{SAMPLE}.variant_calling_detail_metrics",
-        summaryMetrics = "07_variants/3_filtered/log/{SAMPLE}.variant_calling_summary_metrics"
+        vcf = temp(os.path.join(analysis.variants_dir, "3_filtered/{SAMPLE}.vcf.gz")),
+        vcfIndex = temp(os.path.join(analysis.variants_dir, "3_filtered/{SAMPLE}.vcf.gz.tbi")),
+        detailMetrics = os.path.join(analysis.variants_dir, "3_filtered/log/{SAMPLE}.variant_calling_detail_metrics"),
+        summaryMetrics = os.path.join(analysis.variants_dir, "3_filtered/log/{SAMPLE}.variant_calling_summary_metrics")
     params:
-        metricsBname = "07_variants/3_filtered/log/{SAMPLE}"
+        metricsBname = os.path.join(analysis.variants_dir, "3_filtered/log/{SAMPLE}")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -133,12 +133,12 @@ rule variants_select:
         refDict = rules.refs_refDict.output,
         refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        vcf = "07_variants/4_selected/{SAMPLE}.vcf.gz",
-        vcfIndex = "07_variants/4_selected/{SAMPLE}.vcf.gz.tbi",
-        detailMetrics = "07_variants/4_selected/log/{SAMPLE}.variant_calling_detail_metrics",
-        summaryMetrics = "07_variants/4_selected/log/{SAMPLE}.variant_calling_summary_metrics"
+        vcf = os.path.join(analysis.variants_dir, "4_selected/{SAMPLE}.vcf.gz"),
+        vcfIndex = os.path.join(analysis.variants_dir, "4_selected/{SAMPLE}.vcf.gz.tbi"),
+        detailMetrics = os.path.join(analysis.variants_dir, "4_selected/log/{SAMPLE}.variant_calling_detail_metrics"),
+        summaryMetrics = os.path.join(analysis.variants_dir, "4_selected/log/{SAMPLE}.variant_calling_summary_metrics")
     params:
-        metricsBname = "07_variants/4_selected/log/{SAMPLE}"
+        metricsBname = os.path.join(analysis.variants_dir, "4_selected/log/{SAMPLE}")
     conda:
         "../envs/gatk.yaml"
     resources:

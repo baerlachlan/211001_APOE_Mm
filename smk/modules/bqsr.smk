@@ -7,7 +7,7 @@ rule bqsr_firstPass:
         refDict = rules.refs_refDict.output,
         refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        temp("06_bqsr/recal/{SAMPLE}.firstPass.table")
+        temp(os.path.join(analysis.bqsr_dir, "recal/{SAMPLE}.firstPass.table"))
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -36,9 +36,9 @@ rule bqsr_apply:
         refDict = rules.refs_refDict.output,
         recal = rules.bqsr_firstPass.output
     output:
-        bam = temp("06_bqsr/bam/{SAMPLE}.bam"),
-        bamIndex = temp("06_bqsr/bam/{SAMPLE}.bai"),
-        metrics = "06_bqsr/metrics/{SAMPLE}.tsv"
+        bam = temp(os.path.join(analysis.bqsr_dir, "bam/{SAMPLE}.bam")),
+        bamIndex = temp(os.path.join(analysis.bqsr_dir, "bam/{SAMPLE}.bai")),
+        metrics = os.path.join(analysis.bqsr_dir, "metrics/{SAMPLE}.tsv")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -71,7 +71,7 @@ rule bqsr_secondPass:
         refDict = rules.refs_refDict.output,
         refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        temp("06_bqsr/recal/{SAMPLE}.secondPass.table")
+        temp(os.path.join(analysis.bqsr_dir, "recal/{SAMPLE}.secondPass.table"))
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -96,7 +96,7 @@ rule bqsr_analyzeCovariates:
         firstPass = rules.bqsr_firstPass.output,
         secondPass = rules.bqsr_secondPass.output
     output:
-        "06_bqsr/recal/{SAMPLE}.analyzeCovariates.csv"
+        os.path.join(analysis.bqsr_dir, "recal/{SAMPLE}.analyzeCovariates.csv")
     conda:
         "../envs/gatk.yaml"
     resources:

@@ -5,11 +5,11 @@ rule addRG:
         bam = rules.align.output.bam,
         bamIndex = rules.align.output.bamIndex
     output:
-        bam = temp("03_addRG/bam/{SAMPLE}.bam"),
-        bamIndex = temp("03_addRG/bam/{SAMPLE}.bai"),
-        samstats = "03_addRG/samstats/{SAMPLE}.tsv"
+        bam = temp(os.path.join(analysis.addRG_dir, "bam/{SAMPLE}.bam")),
+        bamIndex = temp(os.path.join(analysis.addRG_dir, "bam/{SAMPLE}.bai")),
+        samstats = os.path.join(analysis.addRG_dir, "samstats/{SAMPLE}.tsv")
     params:
-        read_group = lambda wildcard: settings.read_groups[wildcard.SAMPLE]
+        read_group = lambda wildcard: analysis.read_groups[wildcard.SAMPLE]
     conda:
         "../envs/gatk.yaml"
     resources:

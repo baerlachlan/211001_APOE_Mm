@@ -1,11 +1,11 @@
 rule raw_fastqc:
     input:
-        "00_rawData/fastq/{SAMPLE}" + settings.fastq_ext
+        os.path.join(analysis.raw_dir, "fastq/{SAMPLE}" + analysis.fastq_ext)
     output:
-        "00_rawData/FastQC/{SAMPLE}_fastqc.zip",
-        "00_rawData/FastQC/{SAMPLE}_fastqc.html"
+        os.path.join(analysis.raw_dir, "FastQC/{SAMPLE}_fastqc.zip"),
+        os.path.join(analysis.raw_dir, "00_rawData/FastQC/{SAMPLE}_fastqc.html")
     params:
-        outDir = "00_rawData/FastQC/"
+        outDir = os.path.join(analysis.raw_dir, "FastQC/")
     conda:
         "../envs/gatk.yaml"
     resources:

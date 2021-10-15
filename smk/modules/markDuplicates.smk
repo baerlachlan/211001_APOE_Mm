@@ -5,10 +5,10 @@ rule markDuplicates:
         bam = rules.addRG.output.bam,
         bamIndex = rules.addRG.output.bamIndex
     output:
-        bam = temp("04_markDuplicates/bam/{SAMPLE}.bam"),
-        bamIndex = temp("04_markDuplicates/bam/{SAMPLE}.bai"),
-        metrics = "04_markDuplicates/metrics/{SAMPLE}.tsv",
-        samstats = "04_markDuplicates/samstats/{SAMPLE}.tsv"
+        bam = temp(os.path.join(analysis.markDuplicates_dir, "bam/{SAMPLE}.bam")),
+        bamIndex = temp(os.path.join(analysis.markDuplicates_dir, "bam/{SAMPLE}.bai")),
+        metrics = os.path.join(analysis.markDuplicates_dir, "metrics/{SAMPLE}.tsv"),
+        samstats = os.path.join(analysis.markDuplicates_dir, "samstats/{SAMPLE}.tsv")
     conda:
         "../envs/gatk.yaml"
     resources:

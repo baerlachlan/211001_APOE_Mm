@@ -1,12 +1,12 @@
 rule aseRC:
     input:
-        bam = "08_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam",
-        bamIndex = "08_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam.bai",
-        vcf = "07_variants/4_selected/{SAMPLE}.vcf.gz",
-        refFa = "refs/Danio_rerio.GRCz11.dna.primary_assembly.fa",
-        intervals = "refs/exons.intervals"
+        bam = rules.wasp_merge.output.keep_sorted,
+        bamIndex = rules.wasp_merge.output.keep_sortedIndex,
+        vcf = rules.variants_select.output.vcf,
+        refFa = rules.refs_downloadFa.output,
+        intervals = rules.intervals.output
     output:
-        tsv = "12_aseReadCounter/wasp/{SAMPLE}.tsv"
+        tsv = os.path.join(analysis.aseRC_dir, "wasp/{SAMPLE}.tsv")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -29,13 +29,13 @@ rule aseRC:
 
 rule aseRC_nowasp:
     input:
-        bam = "06_bqsr/bam/{SAMPLE}.bam",
-        bamIndex = "06_bqsr/bam/{SAMPLE}.bai",
-        vcf = "07_variants/4_selected/{SAMPLE}.vcf.gz",
-        refFa = "refs/Danio_rerio.GRCz11.dna.primary_assembly.fa",
-        intervals = "refs/exons.intervals"
+        bam = rules.bqsr_apply.output.bam,
+        bamIndex = rules.bqsr_apply.output.bamIndex,
+        vcf = rules.variants_select.output.vcf,
+        refFa = rules.refs_downloadFa.output,
+        intervals = rules.intervals.output
     output:
-        tsv = "12_aseReadCounter/nowasp/{SAMPLE}.tsv"
+        tsv = os.path.join(analysis.aseRC_dir, "no_wasp/{SAMPLE}.tsv")
     conda:
         "../envs/gatk.yaml"
     resources:

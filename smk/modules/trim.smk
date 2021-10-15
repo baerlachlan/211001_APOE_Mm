@@ -1,11 +1,11 @@
 rule trim:
     input:
-        R1 = "00_rawData/fastq/{SAMPLE}" + settings.read_pairs[0] + settings.fastq_ext,
-        R2 = "00_rawData/fastq/{SAMPLE}" + settings.read_pairs[1] + settings.fastq_ext
+        R1 = os.path.join(analysis.raw_dir, "fastq/{SAMPLE}" + analysis.read_pairs[0] + analysis.fastq_ext),
+        R2 = os.path.join(analysis.raw_dir, "fastq/{SAMPLE}" + analysis.read_pairs[1] + analysis.fastq_ext)
     output:
-        R1 = temp("01_trim/fastq/{SAMPLE}" + settings.read_pairs[0] + settings.fastq_ext),
-        R2 = temp("01_trim/fastq/{SAMPLE}" + settings.read_pairs[1] + settings.fastq_ext),
-        html = "01_trim/log/{SAMPLE}.html"
+        R1 = temp(os.path.join(analysis.trim_dir, "fastq/{SAMPLE}" + analysis.read_pairs[0] + analysis.fastq_ext)),
+        R2 = temp(os.path.join(analysis.trim_dir, "fastq/{SAMPLE}" + analysis.read_pairs[1] + analysis.fastq_ext)),
+        html = os.path.join(analysis.trim_dir, "log/{SAMPLE}.html")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -30,12 +30,12 @@ rule trim:
 
 rule trim_fastqc:
     input:
-        "01_trim/fastq/{SAMPLE}" + settings.fastq_ext
+        os.path.join(analysis.trim_dir, "fastq/{SAMPLE}" + analysis.fastq_ext)
     output:
-        "01_trim/FastQC/{SAMPLE}_fastqc.zip",
-        "01_trim/FastQC/{SAMPLE}_fastqc.html"
+        os.path.join(analysis.trim_dir, "FastQC/{SAMPLE}_fastqc.zip"),
+        os.path.join(analysis.trim_dir, "FastQC/{SAMPLE}_fastqc.html")
     params:
-        outDir = "01_trim/FastQC/"
+        outDir = os.path.join(analysis.trim_dir, "FastQC")
     conda:
         "../envs/gatk.yaml"
     resources:

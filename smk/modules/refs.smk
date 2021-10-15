@@ -1,8 +1,8 @@
 rule refs_downloadFa:
     output:
-        temp(settings.ref_path)
+        temp(analysis.ref_path)
     params:
-        ref_url = settings.ref_url
+        ref_url = analysis.ref_url
     threads:
         1
     shell:
@@ -12,9 +12,9 @@ rule refs_downloadFa:
 
 rule refs_downloadGtf:
     output:
-        temp(settings.gtf_path)
+        temp(analysis.gtf_path)
     params:
-        gtf_url = settings.gtf_url
+        gtf_url = analysis.gtf_url
     threads:
         1
     shell:
@@ -24,9 +24,9 @@ rule refs_downloadGtf:
 
 rule refs_downloadDbsnp:
     output:
-        temp(settings.dbsnp_path)
+        temp(analysis.dbsnp_path)
     params:
-        dbsnp_url = settings.dbsnp_url
+        dbsnp_url = analysis.dbsnp_url
     threads:
         1
     shell:
@@ -38,7 +38,7 @@ rule refs_refDict:
     input:
         rules.refs_downloadFa.output
     output:
-        temp(settings.ref_path.rstrip("fa") + "dict")
+        temp(analysis.ref_path.rstrip("fa") + "dict")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -53,7 +53,7 @@ rule refs_refIndex:
     input:
         rules.refs_downloadFa.output
     output:
-        temp(settings.ref_path + ".fai")
+        temp(analysis.ref_path + ".fai")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -69,9 +69,9 @@ rule refs_starIndex:
         ref_fa = rules.refs_downloadFa.output,
         gtf = rules.refs_downloadGtf.output
     output:
-        temp(directory("refs/star/"))
+        temp(directory(os.path.join(analysis.refs_dir, "star")))
     params:
-        overhang = settings.read_length - 1
+        overhang = analysis.read_length - 1
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -98,7 +98,7 @@ rule refs_dbsnpIndex:
     input:
         rules.refs_downloadDbsnp.output
     output:
-        settings.dbsnp_path + ".tbi"
+        analysis.dbsnp_path + ".tbi"
     conda:
         "../envs/gatk.yaml"
     resources:

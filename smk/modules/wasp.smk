@@ -1,13 +1,13 @@
 rule wasp_snvs:
     output:
         # gds = "07_variants/5_gds/{SAMPLE}.gds",
-        snvDir = directory(expand("08_wasp/1_snvs/{SAMPLE}", SAMPLE = settings.samples))
+        snvDir = directory(expand("08_wasp/1_snvs/{SAMPLE}", SAMPLE = analysis.samples))
     conda:
         "../envs/wasp.yaml"
     params:
-        proj_root = settings.proj_root,
-        variants_dir = settings.variants_dir,
-        wasp_dir = settings.wasp_dir
+        proj_root = analysis.proj_root,
+        variants_dir = analysis.variants_dir,
+        wasp_dir = analysis.wasp_dir
     resources:
         cpu = 1,
         ntasks = 1,
@@ -21,13 +21,13 @@ rule wasp_findIntersecting:
         bam = rules.bqsr_apply.output.bam,
         snvDir = "08_wasp/1_snvs/{SAMPLE}"
     output:
-        fq1 = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq1.gz"),
-        fq2 = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq2.gz"),
-        single = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.single.fq.gz"),
-        to_remap = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.to.remap.bam"),
-        keep_intersect = temp("08_wasp/2_findIntersecting/{SAMPLE}/{SAMPLE}.keep.bam")
+        fq1 = temp(os.path.join(analysis.wasp_dir, "2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq1.gz")),
+        fq2 = temp(os.path.join(analysis.wasp_dir, "2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.fq2.gz")),
+        single = temp(os.path.join(analysis.wasp_dir, "2_findIntersecting/{SAMPLE}/{SAMPLE}.remap.single.fq.gz")),
+        to_remap = temp(os.path.join(analysis.wasp_dir, "2_findIntersecting/{SAMPLE}/{SAMPLE}.to.remap.bam")),
+        keep_intersect = temp(os.path.join(analysis.wasp_dir, "2_findIntersecting/{SAMPLE}/{SAMPLE}.keep.bam"))
     params:
-        outDir = temp(directory("08_wasp/2_findIntersecting/{SAMPLE}"))
+        outDir = temp(directory(os.path.join(analysis.wasp_dir, "2_findIntersecting/{SAMPLE}")))
     conda:
         "../envs/wasp.yaml"
     resources:
@@ -51,14 +51,14 @@ rule wasp_remap:
         fq2 = rules.wasp_findIntersecting.output.fq2,
         starIndex = rules.refs_starIndex.output
     output:
-        remapped_unsorted = temp("08_wasp/3_remap/{SAMPLE}Aligned.out.bam"),
-        remapped_sorted = temp("08_wasp/3_remap/{SAMPLE}sorted.out.bam"),
-        index = temp("08_wasp/3_remap/{SAMPLE}sorted.out.bam.bai"),
-        STARgenome = temp(directory("08_wasp/3_remap/{SAMPLE}_STARgenome")),
-        STARpass1 = temp(directory("08_wasp/3_remap/{SAMPLE}_STARpass1"))
+        remapped_unsorted = temp(os.path.join(analysis.wasp_dir, "3_remap/{SAMPLE}Aligned.out.bam")),
+        remapped_sorted = temp(os.path.join(analysis.wasp_dir, "3_remap/{SAMPLE}sorted.out.bam")),
+        index = temp(os.path.join(analysis.wasp_dir, "3_remap/{SAMPLE}sorted.out.bam.bai")),
+        STARgenome = temp(directory(os.path.join(analysis.wasp_dir, "3_remap/{SAMPLE}_STARgenome"))),
+        STARpass1 = temp(directory(os.path.join(analysis.wasp_dir, "3_remap/{SAMPLE}_STARpass1")))
     params:
-        overhang = settings.read_length - 1,
-        bname = "08_wasp/3_remap/{SAMPLE}"
+        overhang = analysis.read_length - 1,
+        bname = os.path.join(analysis.wasp_dir, "3_remap/{SAMPLE}")
     conda:
         "../envs/wasp.yaml"
     resources:
@@ -92,7 +92,7 @@ rule wasp_filterRemapped:
         remapped_unsorted = rules.wasp_remap.output.remapped_unsorted,
         remapped_sorted = rules.wasp_remap.output.remapped_sorted
     output:
-        keep_filter = temp("08_wasp/4_filterRemapped/{SAMPLE}.keep.bam")
+        keep_filter = temp(os.path.join(analysis.wasp_dir, "4_filterRemapped/{SAMPLE}.keep.bam"))
     conda:
         "../envs/wasp.yaml"
     resources:
@@ -113,10 +113,10 @@ rule wasp_merge:
         keep_filter = rules.wasp_filterRemapped.output.keep_filter,
         keep_intersect = rules.wasp_findIntersecting.output.keep_intersect
     output:
-        keep_sorted = temp("08_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam"),
-        keep_sortedIndex = temp("08_wasp/5_merge/{SAMPLE}.keep.merge.sort.bam.bai")
+        keep_sorted = temp(os.path.join(analysis.wasp_dir, "5_merge/{SAMPLE}.keep.merge.sort.bam")),
+        keep_sortedIndex = temp(os.path.join(analysis.wasp_dir, "5_merge/{SAMPLE}.keep.merge.sort.bam.bai"))
     params:
-        keep_merged = temp("08_wasp/5_merge/{SAMPLE}.keep.merge.bam")
+        keep_merged = temp(os.path.join(analysis.wasp_dir, "5_merge/{SAMPLE}.keep.merge.bam"))
     conda:
         "../envs/wasp.yaml"
     resources:

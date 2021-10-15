@@ -6,9 +6,9 @@ rule splitNCigar:
         refIndex = rules.refs_refIndex.output,
         refDict = rules.refs_refDict.output
     output:
-        bam = temp("05_splitNCigar/bam/{SAMPLE}.bam"),
-        bamIndex = temp("05_splitNCigar/bam/{SAMPLE}.bai"),
-        samstats = "05_splitNCigar/samstats/{SAMPLE}.tsv"
+        bam = temp(os.path.join(analysis.splitNCigar_dir, "bam/{SAMPLE}.bam")),
+        bamIndex = temp(os.path.join(analysis.splitNCigar_dir, "bam/{SAMPLE}.bai")),
+        samstats = os.path.join(analysis.splitNCigar_dir, "samstats/{SAMPLE}.tsv")
     conda:
         "../envs/gatk.yaml"
     resources:

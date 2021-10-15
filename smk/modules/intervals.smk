@@ -1,11 +1,11 @@
 rule intervals:
     output:
-        "refs/exons.intervals"
+        os.path.join(analysis.refs_dir, "exons.intervals")
     params:
-        species = settings.species,
-        ensembl_release = settings.ensembl_release
+        species = analysis.species,
+        ensembl_release = analysis.ensembl_release
     conda:
-        "../envs/R.yaml"
+        "../envs/intervals.yaml"
     resources:
         cpu = 1,
         ntasks = 1,

@@ -1,0 +1,213 @@
+---
+title: "Allele Specific Expression Quality Control"
+subtitle: "210408_psen1_fADfAI dataset"
+author: "Lachlan Baer"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    fig_width: 8
+    fig_height: 6
+    fig_align: "center"
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  error = FALSE, 
+  fig.align = "center"
+)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+# Introduction
+
+This analysis was initiated with the intention to address claims that locus-based enrichment of differentially expressed (DE) genes caused by allele specific expression (ASE) does not occur in isogenic organisms such as mice.
+However, previous analysis by Karissa Barthelson showed a clustering of differentially expressed genes on chromosome _, the same chromosome as the mutation.
+Therefore, the aim of this analysis was to determine the extent of heterozygous polymorphisms from RNA-Seq data, allowing inferences as to whether ASE may be a driver of the observed phenomenom or whether it is caused by some other mechanism that is likely to be have some functional explanation.
+
+# Setup 
+
+```{r packages}
+suppressPackageStartupMessages({
+  ## Common
+  library(tidyverse)
+  library(magrittr)
+  library(future.apply)
+  library(here)
+  library(AnnotationHub)
+  library(purrr)
+  library(scales)
+  library(kableExtra)
+  library(tictoc)
+  library(ggrepel)
+  library(RColorBrewer)
+  library(ggpubr)
+  library(pander)
+  library(rmarkdown)
+  ## Project specific
+  library(UpSetR)
+  library(SeqArray)
+  library(ngsReports)
+})
+```
+
+```{r options}
+if (interactive()) setwd(here::here())
+theme_set(theme_bw())
+cores <- availableCores() - 1
+```
+
+## EnsDb
+
+```{r}
+ah <- AnnotationHub() %>%
+  subset(species == "Mus musculus") %>%
+  subset(rdataclass == "EnsDb")
+ensDb <- ah[["AH95775"]] ## Ens104
+genes <- genes(ensDb)
+mcols(genes) <- mcols(genes)[
+  c("gene_id", "gene_name", "gene_biotype", "entrezid")
+]
+exons <- exonsBy(ensDb, by = "gene")
+```
+
+An `EnsDb` object for Ensembl release 101 was setup for extracting gene and exon annotation information.
+
+## Metadata
+
+```{r}
+meta <- read_tsv(here("misc/SYNAPSE_METADATA_MANIFEST.tsv")) %>%
+  left_join(read_csv(here("misc/metaAPOE.csv"))) %>%
+  dplyr::select(
+    sampleID = specimenID, species, genotypeBackground, litter, dateBirth,
+    dateDeath, genotype = Genotype, sex = Sex, age = Age, lane, basename = name,
+    modelSystemName, individualID, study
+  ) %>%
+  dplyr::filter(str_detect(sampleID, "_3M_")) %>%
+  mutate(basename = str_remove(basename, ".bam_R(1|2).fastq.gz")) %>%
+  distinct(sampleID, .keep_all = TRUE)
+```
+
+```{r}
+primary_chrs <- c(seq(1:19), "X", "Y")
+```
+
+# Variants
+
+```{r}
+gdsPaths <- list.files(
+  "/hpcfs/users/a1647910/211001_APOE_Mm_ASE/07_variants/5_gds",
+  pattern = ".gds$",
+  full.names = TRUE
+)
+```
+
+```{r}
+gds <- seqOpen(gdsPaths[[1]])
+seqGetData(gds, "genotype")
+seqClose(gds)
+```
+
+```{r}
+snvList <- lapply(seq_along(gdsPaths), function(x){
+  gdsPath <- gdsPaths[x]
+  sample <- basename(gdsPath) %>%
+    str_remove(".gds")
+  gds <- seqOpen(gdsPath, readonly = FALSE)
+  snvs <- tibble(
+    variant.id = seqGetData(gds, "variant.id"),
+    chromosome = seqGetData(gds, "chromosome"),
+    position = seqGetData(gds, "position"),
+    allele = seqGetData(gds, "allele"),
+    filter = seqGetData(gds, "annotation/filter"),
+    genotype = seqGetData(gds, "annotation/info/AC"),
+    genoQual = drop(seqGetData(gds, "annotation/format/GQ"))
+  ) %>%
+    mutate(
+      sample = sample,
+      genotype = case_when(
+        genotype == 1 ~ "Het",
+        genotype == 2 ~ "Hom"
+      ),
+      refAllele = str_split(allele, ",", simplify = TRUE)[,1],
+      altAllele = str_split(allele, ",", simplify = TRUE)[,2]
+    )
+  seqClose(gds)
+  return(snvs)
+})
+```
+
+```{r}
+mutantChr <- "7"
+```
+
+```{r}
+lapply(snvList, function(x){
+  summarise(
+    x,
+    basename = unique(sample),
+    nMutant = sum(chromosome == mutantChr),
+    nOther = n() - sum(chromosome == mutantChr)
+  ) %>%
+    left_join(meta[,c("basename", "sampleID", "genotype")]) %>%
+    pivot_longer(cols = c(nMutant, nOther), names_to = "chr", values_to = "count") %>%
+    mutate(chr = factor(chr, levels = c("nOther", "nMutant")))
+}) %>%
+  bind_rows() %>%
+  ggplot(aes(sampleID, count, fill = chr)) +
+  geom_bar(stat = "identity", position = "stack", colour = "black") +
+  scale_fill_manual(
+    values = c("grey60", "darkred"),
+    labels = c("False", "True")
+    ) +
+  facet_wrap(~ genotype, scales = "free_x") +
+  labs(
+    x = "Sample",
+    y = "Number of variants",
+    fill = "Mutant\nchromosome",
+    title = ""
+  ) +
+  theme(axis.text.x = element_text(angle = 315, hjust = 0))
+```
+
+```{r}
+lapply(snvList, function(x){
+  dplyr::filter(x, chromosome == mutantChr) %>%
+  summarise(
+    basename = unique(sample),
+    nHet = sum(genotype == "Het"),
+    nHom = sum(genotype == "Hom")
+  ) %>%
+    left_join(meta[,c("basename", "sampleID", "genotype")]) %>%
+    pivot_longer(cols = c(nHet, nHom), names_to = "state", values_to = "count") %>%
+    mutate(state = factor(state, levels = c("nHet", "nHom")))
+}) %>%
+  bind_rows() %>%
+  ggplot(aes(sampleID, count, fill = state)) +
+  geom_bar(stat = "identity", position = "stack", colour = "black") +
+  # scale_fill_manual(
+  #   values = c("grey60", "darkblue"),
+  #   labels = c("", "True")
+  #   ) +
+  facet_wrap(~ genotype, scales = "free_x") +
+  # labs(
+  #   x = "Sample",
+  #   y = "Number of variants",
+  #   fill = "Mutant\nchromosome",
+  #   title = ""
+  # ) +
+  theme(axis.text.x = element_text(angle = 315, hjust = 0))
+```
+
+- compare variants between individuals
+- plot heatmap of chromosomal locations
+- check potential sample mislabel

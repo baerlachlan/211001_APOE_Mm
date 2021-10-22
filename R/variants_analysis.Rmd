@@ -150,6 +150,8 @@ snvList <- lapply(seq_along(gdsPaths), function(x){
 mutantChr <- "7"
 ```
 
+## Genotypes
+
 ```{r}
 lapply(snvList, function(x){
   summarise(
@@ -207,6 +209,13 @@ lapply(snvList, function(x){
   # ) +
   theme(axis.text.x = element_text(angle = 315, hjust = 0))
 ```
+
+## Location
+
+```{r}
+
+```
+
 
 - compare variants between individuals
 - plot heatmap of chromosomal locations

@@ -56,7 +56,6 @@ suppressPackageStartupMessages({
 ```{r commonOpts}
 if (interactive()) setwd(here::here())
 theme_set(theme_bw())
-cores <- availableCores() - 1
 ```
 
 ## EnsDb
@@ -72,11 +71,6 @@ ah <- AnnotationHub() %>%
   subset(rdataclass == "EnsDb")
 ahId <- ah$ah_id[str_detect(ah$title, ens_release)]
 ensDb <- ah[[ahId]]
-```
-
-```{r chrLengths}
-chrLengths <- seqlengths(ensDb) %>%
-  .[primary_chrs]
 ```
 
 An `EnsDb` object for Ensembl release 101 was setup for extracting gene and exon annotation information.
@@ -101,6 +95,11 @@ mcols(genes) <- mcols(genes)[
 exons <- exonsBy(ensDb, by = "gene")
 ```
 
+```{r chrLengths}
+chrLengths <- seqlengths(ensDb) %>%
+  .[primary_chrs]
+```
+
 ## Sample metadata
 
 ```{r}
@@ -113,27 +112,33 @@ meta <- read_tsv(here("misc/SYNAPSE_METADATA_MANIFEST.tsv")) %>%
   ) %>%
   dplyr::filter(str_detect(sampleID, "_3M_")) %>%
   mutate(basename = str_remove(basename, ".bam_R(1|2).fastq.gz")) %>%
-  distinct(sampleID, .keep_all = TRUE)
+  distinct(sampleID, .keep_all = TRUE) %>%
+  dplyr::arrange(genotype, sampleID)
 ```
 
 # SNV profiles
 
 ```{r}
 snvProfile <- function(vcf, minDepth = 10){
-  svp <- suppressWarnings(ScanVcfParam(info = NA, geno = c("GT", "AD", "DP")))
-  profile <- readVcfAsVRanges(vcf, param = svp) %>%
+  svp <- ScanVcfParam(info = NA, geno = c("GT", "AD", "DP"))
+  profile <- suppressWarnings({
+    readVcfAsVRanges(vcf, param = svp)
+  }) %>%
     .[totalDepth(.) >= minDepth,]
   mcols(profile) <- mcols(profile) %>%
     as.data.frame() %>%
-    separate(col = "GT", sep = "/", into = c("allele_1", "allele_2"),
-             fill = "right", remove = TRUE) %>%
+    separate(
+      col = "GT", sep = "/", into = c("allele_1", "allele_2"), fill = "right",
+      remove = TRUE
+    ) %>%
     mutate(
       ref = ref(profile),
       alt = alt(profile),
       allele_1 = ifelse(allele_1 == 0, ref, alt),
       allele_2 = ifelse(allele_2 == 0, ref, alt),
       genotype = paste0(allele_1, ":", allele_2)
-    )
+    ) %>%
+    dplyr::select(QUAL, allele_1, allele_2, genotype)
   return(profile)
 }
 ```
@@ -151,48 +156,71 @@ profiles <- lapply(files, snvProfile)
 ```
 
 ```{r}
-comparisons <- sapply(profiles, function(profile_1){
-  sapply(profiles, function(profile_2){
-    compareProfiles(profile_1, profile_2)
-  }, simplify = FALSE)
-}, simplify = FALSE)
-```
-
-```{r}
-file_1 <- file.path(
-  "/hpcfs/users/a1647910/211001_APOE_Mm_ASE/07_variants/4_selected",
-  "APOE_3M_1.FCHJKY5BBXX_L1_IATCACG.vcf.gz"
-)
-prof_1 <- snvProfile(file_1)
-```
-
-```{r}
-file_2 <- file.path(
-  "/hpcfs/users/a1647910/211001_APOE_Mm_ASE/07_variants/4_selected",
-  "APOE_3M_2.FCHJKY5BBXX_L1_ITTAGGC.vcf.gz"
-)
-prof_2 <- snvProfile(file_2)
-```
-
-```{r}
-# gr <- subsetByOverlaps(prof_1, prof_2)
-# names(mcols(gr)) <- paste0(names(mcols(gr)), ".", sample_1)
-# mcols(gr)[paste0(names(mcols(prof_2)), ".", sample_2)] <- mcols(prof_2)
-```
-
-```{r}
-compareProfiles <- function(profile_1, profile_2){
-  overlaps <- findOverlaps(profile_1, profile_2)
-  profile_1 <- profile_1[queryHits(overlaps)]
-  profile_2 <- profile_2[subjectHits(overlaps)]
-  common <- ranges(profile_1)
-  mcols(common)$sample_1 <- 
-  mcols(common)$genotype_1 <- mcols(profile_1)$genotype
-  mcols(common)$genotype_2 <- mcols(profile_2)$genotype
-  mcols(common)$match <- mcols(common)$genotype_1 == mcols(common)$genotype_2
+compareProfiles <- function(prof_1, prof_2){
+  overlaps <- findOverlaps(prof_1, prof_2)
+  prof_1 <- prof_1[queryHits(overlaps)]
+  prof_2 <- prof_2[subjectHits(overlaps)]
+  sample_1 <- unique(sampleNames(prof_1))
+  sample_2 <- unique(sampleNames(prof_2))
+  common <- ranges(prof_1)
+  mcols(common)$sample_1 <- sampleNames(prof_1)
+  mcols(common)$sample_2 <- sampleNames(prof_2)
+  mcols(common)$allele_1.sample_1 <- mcols(prof_1)$allele_1
+  mcols(common)$allele_1.sample_2 <- mcols(prof_2)$allele_1
+  mcols(common)$allele_2.sample_1 <- mcols(prof_1)$allele_2
+  mcols(common)$allele_2.sample_2 <- mcols(prof_2)$allele_2
+  mcols(common)$genotype.sample_1 <- mcols(prof_1)$genotype
+  mcols(common)$genotype.sample_2 <- mcols(prof_2)$genotype
+  mcols(common)$matches_1 <- 
+    mcols(common)$allele_1.sample_1 == mcols(common)$allele_1.sample_2
+  mcols(common)$matches_2 <- 
+    mcols(common)$allele_2.sample_1 == mcols(common)$allele_2.sample_2
+  mcols(common)$matches_sum <-
+    mcols(common)$matches_1 + mcols(common)$matches_2
   return(common)
 }
 ```
+
+```{r}
+comparisons <- sapply(profiles, function(prof_1){
+  sapply(profiles, function(prof_2){
+    compareProfiles(prof_1, prof_2)
+  }, simplify = FALSE)
+}, simplify = FALSE) %>%
+  unlist() %>%
+  IRangesList(compress = FALSE)
+```
+
+```{r}
+alleleSimilarity <- function(comparison){
+  tibble(
+    sample_1 = unique(mcols(comparison)$sample_1),
+    sample_2 = unique(mcols(comparison)$sample_2),
+    allele_matches = sum(mcols(comparison)$matches_sum),
+    alleles_total = length(comparison) * 2
+  ) %>%
+    mutate(
+      similarity = round((allele_matches + 1) / (alleles_total + 5), 4)
+    )
+}
+```
+
+```{r}
+similarities <- lapply(comparisons, alleleSimilarity) %>%
+  bind_rows()
+```
+
+```{r}
+similarities %>%
+  mutate(
+    sample_1 = factor(sample_1, levels = meta$basename),
+    sample_2 = factor(sample_2, levels = meta$basename)
+  ) %>%
+  ggplot(aes(sample_1, sample_2, fill = similarity)) +
+  geom_tile()
+```
+
+---
 
 ```{r}
 seqcat_1 <- create_profile(file_1, sample = "APOE_3M_1.FCHJKY5BBXX_L1_IATCACG", filter_gd = FALSE, filter_vc = FALSE, filter_mt = FALSE, filter_ns = FALSE, filter_pd = FALSE, min_depth = 10)
@@ -220,29 +248,29 @@ function (data, similarity = NULL, a = 1, b = 5)
       stop("supplied similarity object is not a dataframe")
     }
     correct_names <- c("sample_1", "sample_2", "variants_1", 
-      "variants_2", "overlaps", "matches", "concordance", 
-      "similarity_score")
+                       "variants_2", "overlaps", "matches", "concordance", 
+                       "similarity_score")
     if (!identical(names(similarity), correct_names)) {
       stop("supplied similarity dataframe does not have the ", 
-        "correct structure")
+           "correct structure")
     }
   }
   sample_1 <- unique(data$sample_1)
   sample_2 <- unique(data$sample_2)
   n_total <- nrow(data[data$match == "match" | data$match == 
-    "mismatch", ])
+                         "mismatch", ])
   n_matches <- nrow(data[data$match == "match", ])
   n_sample_1 <- nrow(data) - nrow(data[data$match == paste0(sample_2, 
-    "_only"), ])
+                                                            "_only"), ])
   n_sample_2 <- nrow(data) - nrow(data[data$match == paste0(sample_1, 
-    "_only"), ])
+                                                            "_only"), ])
   concordance <- round(n_matches/n_total * 100, 1)
   score <- round((n_matches + a)/(n_total + a + b) * 100, 
-    1)
+                 1)
   results <- data.frame(sample_1 = sample_1, sample_2 = sample_2, 
-    variants_1 = n_sample_1, variants_2 = n_sample_2, overlaps = n_total, 
-    matches = n_matches, concordance = concordance, similarity_score = score, 
-    stringsAsFactors = FALSE)
+                        variants_1 = n_sample_1, variants_2 = n_sample_2, overlaps = n_total, 
+                        matches = n_matches, concordance = concordance, similarity_score = score, 
+                        stringsAsFactors = FALSE)
   if (!is.null(similarity)) {
     results <- rbind(similarity, results)
   }

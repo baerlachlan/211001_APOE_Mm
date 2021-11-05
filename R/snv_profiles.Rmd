@@ -50,6 +50,8 @@ suppressPackageStartupMessages({
   library(rmarkdown)
   ## Project specific
   library(VariantAnnotation)
+  library(pheatmap)
+  library(plyranges)
 })
 ```
 
@@ -116,6 +118,14 @@ meta <- read_tsv(here("misc/SYNAPSE_METADATA_MANIFEST.tsv")) %>%
   dplyr::arrange(genotype, sampleID)
 ```
 
+```{r}
+genoCols <- meta$genotype %>%
+  unique() %>%
+  length() %>%
+  brewer.pal("Set1") %>%
+  setNames(unique(meta$genotype))
+```
+
 # SNV profiles
 
 ```{r}
@@ -156,13 +166,21 @@ profiles <- lapply(files, snvProfile)
 ```
 
 ```{r}
-compareProfiles <- function(prof_1, prof_2){
+compareProfiles <- function(prof_1, prof_2, chromosome = NULL){
+  if (!is.null(chromosome)) {
+    prof_1 <- plyranges::filter(prof_1, seqnames == chromosome)
+    prof_2 <- plyranges::filter(prof_2, seqnames == chromosome)
+  }
   overlaps <- findOverlaps(prof_1, prof_2)
   prof_1 <- prof_1[queryHits(overlaps)]
   prof_2 <- prof_2[subjectHits(overlaps)]
   sample_1 <- unique(sampleNames(prof_1))
   sample_2 <- unique(sampleNames(prof_2))
-  common <- ranges(prof_1)
+  common <- GRanges(
+    seqnames = seqnames(prof_1),
+    ranges = ranges(prof_1),
+    strand = strand(prof_1)
+  )
   mcols(common)$sample_1 <- sampleNames(prof_1)
   mcols(common)$sample_2 <- sampleNames(prof_2)
   mcols(common)$allele_1.sample_1 <- mcols(prof_1)$allele_1
@@ -188,7 +206,7 @@ comparisons <- sapply(profiles, function(prof_1){
   }, simplify = FALSE)
 }, simplify = FALSE) %>%
   unlist() %>%
-  IRangesList(compress = FALSE)
+  GRangesList(compress = FALSE)
 ```
 
 ```{r}
@@ -200,7 +218,8 @@ alleleSimilarity <- function(comparison){
     alleles_total = length(comparison) * 2
   ) %>%
     mutate(
-      similarity = round((allele_matches + 1) / (alleles_total + 5), 4)
+      similarity = (allele_matches + 1) / (alleles_total + 5)
+      # similarity = allele_matches / alleles_total
     )
 }
 ```
@@ -211,16 +230,72 @@ similarities <- lapply(comparisons, alleleSimilarity) %>%
 ```
 
 ```{r}
-similarities %>%
-  mutate(
-    sample_1 = factor(sample_1, levels = meta$basename),
-    sample_2 = factor(sample_2, levels = meta$basename)
-  ) %>%
-  ggplot(aes(sample_1, sample_2, fill = similarity)) +
-  geom_tile()
+# annotations <- 
+meta %>%
+  column_to_rownames("basename")
 ```
 
----
+```{r}
+similarities_mat <- similarities %>%
+  dplyr::select(-allele_matches, -alleles_total) %>%
+  pivot_wider(names_from = "sample_2", values_from = "similarity") %>%
+  as.data.frame() %>%
+  column_to_rownames("sample_1") %>%
+  as.matrix() %>%
+  .[meta$basename, meta$basename]
+similarities_mat[upper.tri(similarities_mat)] <- NA
+# similarities_mat[lower.tri(similarities_mat)] <- NA
+```
+
+```{r}
+library(pheatmap)
+pheatmap(
+  similarities_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  gaps_row = c(16, 32),
+  gaps_col = c(16, 32),
+  annotation_row = column_to_rownames(meta, "basename") %>%
+    dplyr::select(genotype),
+  annotation_col = column_to_rownames(meta, "basename") %>%
+    dplyr::select(genotype),
+  annotation_colors = list(genotype = genoCols),
+  na_col = "white",
+  border_color = NA,
+  color = colorRampPalette(c("grey70", "navy"))(200),
+  # breaks = c(0, 0.5, 0.9, 1)
+)
+```
+
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+Heatmap(
+  similarities_mat,
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  na_col = "white",
+  left_annotation = rowAnnotation(
+    genotype = meta$genotype,
+    col = list(genotype = genoCols)
+  ),
+  bottom_annotation = columnAnnotation(
+    genotype = meta$genotype,
+    col = list(genotype = genoCols)
+  ),
+  row_split = meta$genotype,
+  column_split = meta$genotype,
+  column_title = NULL,
+  row_title = NULL,
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  name = "Similarity",  # Names colour legend
+  col = colorRamp2(
+    breaks = c(0, 0.5, 0.98, 1),
+    colors = c("white", "white", "grey", "navy")
+  )
+)
+```
 
 ```{r}
 seqcat_1 <- create_profile(file_1, sample = "APOE_3M_1.FCHJKY5BBXX_L1_IATCACG", filter_gd = FALSE, filter_vc = FALSE, filter_mt = FALSE, filter_ns = FALSE, filter_pd = FALSE, min_depth = 10)

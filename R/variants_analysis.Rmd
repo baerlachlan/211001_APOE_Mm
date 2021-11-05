@@ -41,7 +41,6 @@ suppressPackageStartupMessages({
   ## Common
   library(tidyverse)
   library(magrittr)
-  library(future.apply)
   library(here)
   library(AnnotationHub)
   library(purrr)
@@ -54,25 +53,50 @@ suppressPackageStartupMessages({
   library(pander)
   library(rmarkdown)
   ## Project specific
-  library(UpSetR)
-  library(SeqArray)
-  library(ngsReports)
+  library()
 })
 ```
 
-```{r options}
+```{r commonOpts}
 if (interactive()) setwd(here::here())
 theme_set(theme_bw())
 cores <- availableCores() - 1
 ```
 
+```{r projOpts}
+options(ucscChromosomeNames = FALSE)
+```
+
 ## EnsDb
 
-```{r}
+```{r ensParams}
+ens_species <- "Mus musculus"
+ens_release <- "104"
+```
+
+```{r ensDb}
 ah <- AnnotationHub() %>%
-  subset(species == "Mus musculus") %>%
+  subset(species == ens_species) %>%
   subset(rdataclass == "EnsDb")
-ensDb <- ah[["AH95775"]] ## Ens104
+ahId <- ah$ah_id[str_detect(ah$title, ens_release)]
+ensDb <- ah[[ahId]]
+```
+
+An `EnsDb` object for Ensembl release 101 was setup for extracting gene and exon annotation information.
+
+## Genome data
+
+```{r}
+if (ens_species == "Mus musculus") {
+  primary_chrs <- c(seq(1:19), "X", "Y")
+} else if (ens_species == "Danio rerio") {
+  primary_chrs <- c(seq(1:25))
+} else if (ens_species == "Homo sapiens") {
+  primary_chrs <- c(seq(1:22), "X", "Y")
+}
+```
+
+```{r ensFeatures}
 genes <- genes(ensDb)
 mcols(genes) <- mcols(genes)[
   c("gene_id", "gene_name", "gene_biotype", "entrezid")
@@ -80,7 +104,10 @@ mcols(genes) <- mcols(genes)[
 exons <- exonsBy(ensDb, by = "gene")
 ```
 
-An `EnsDb` object for Ensembl release 101 was setup for extracting gene and exon annotation information.
+```{r chrInfo}
+chrInfo <- getChromInfoFromEnsembl("GRCm39", release = "104") %>%
+  dplyr::filter(name %in% primary_chrs)
+```
 
 ## Metadata
 
@@ -98,7 +125,7 @@ meta <- read_tsv(here("misc/SYNAPSE_METADATA_MANIFEST.tsv")) %>%
 ```
 
 ```{r}
-primary_chrs <- c(seq(1:19), "X", "Y")
+primary_chroms <- c(seq(1:19), "X", "Y")
 ```
 
 # Variants
@@ -170,7 +197,7 @@ lapply(snvList, function(x){
   scale_fill_manual(
     values = c("grey60", "darkred"),
     labels = c("False", "True")
-    ) +
+  ) +
   facet_wrap(~ genotype, scales = "free_x") +
   labs(
     x = "Sample",
@@ -184,11 +211,11 @@ lapply(snvList, function(x){
 ```{r}
 lapply(snvList, function(x){
   dplyr::filter(x, chromosome == mutantChr) %>%
-  summarise(
-    basename = unique(sample),
-    nHet = sum(genotype == "Het"),
-    nHom = sum(genotype == "Hom")
-  ) %>%
+    summarise(
+      basename = unique(sample),
+      nHet = sum(genotype == "Het"),
+      nHom = sum(genotype == "Hom")
+    ) %>%
     left_join(meta[,c("basename", "sampleID", "genotype")]) %>%
     pivot_longer(cols = c(nHet, nHom), names_to = "state", values_to = "count") %>%
     mutate(state = factor(state, levels = c("nHet", "nHom")))
@@ -213,9 +240,53 @@ lapply(snvList, function(x){
 ## Location
 
 ```{r}
-
+chrGR <- chrInfo[,c("name", "length")] %>%
+  dplyr::rename(seqnames = name, end = length) %>%
+  mutate(start = 1) %>%
+  GRanges()
 ```
 
+```{r}
+snvGR <- snvList[[3]] %>%
+  dplyr::select(seqnames = chromosome, start = position) %>%
+  mutate(end = start) %>%
+  GRanges()
+```
+
+```{r}
+apoeGR <- genes %>%
+  as_tibble() %>%
+  dplyr::filter(str_detect(gene_name, "Apoe")) %>%
+  GRanges()
+apoe_mid <- ranges(apoeGR) %>%
+  as.data.frame() %>%
+  with(start + end / 2)
+```
+
+```{r}
+kp <- plotKaryotype(chrGR, chromosomes = primary_chrs)
+kpPlotDensity(kp, snvGR, col = "black", window.size = 1e3)
+kpPlotRegions(kp, apoeGR, col = "red")
+```
+
+## Similarity
+
+```{r}
+vcf_files <- list.files("/hpcfs/users/a1647910/211001_APOE_Mm_ASE/07_variants/4_selected", pattern = ".vcf.gz$", full.names = TRUE)
+profiles <- lapply(vcf_files, function(x){
+  sample <- basename(x) %>%
+    str_remove(".vcf.gz$")
+  create_profile(x, sample = sample,  filter_gd = FALSE, filter_vc = FALSE, filter_mt = FALSE, filter_ns = FALSE, filter_pd = FALSE)
+})
+```
+
+```{r}
+compare_profiles(profiles[[1]], profiles[[2]])
+```
+
+```{r}
+comparisons <- compare_many(profiles)
+```
 
 - compare variants between individuals
 - plot heatmap of chromosomal locations

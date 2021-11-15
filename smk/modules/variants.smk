@@ -1,4 +1,4 @@
-rule variants_call:
+rule variants_gvcf:
     input:
         bam = rules.bqsr_apply.output.bam,
         bamIndex = rules.bqsr_apply.output.bamIndex,
@@ -8,12 +8,12 @@ rule variants_call:
         refDbsnp = rules.refs_downloadDbsnp.output,
         intervals = rules.intervals.output
     output:
-        vcf = temp(os.path.join(analysis.variants_dir, "1_called/{SAMPLE}.vcf.gz")),
-        vcfIndex = temp(os.path.join(analysis.variants_dir, "1_called/{SAMPLE}.vcf.gz.tbi")),
-        detailMetrics = os.path.join(analysis.variants_dir, "1_called/log/{SAMPLE}.variant_calling_detail_metrics"),
-        summaryMetrics = os.path.join(analysis.variants_dir, "1_called/log/{SAMPLE}.variant_calling_summary_metrics")
+        gvcf = temp(os.path.join(analysis.variants_dir, "1_gvcf/{SAMPLE}.g.vcf.gz")),
+        gvcfIndex = temp(os.path.join(analysis.variants_dir, "1_gvcf/{SAMPLE}.g.vcf.gz.tbi")),
+        detailMetrics = os.path.join(analysis.variants_dir, "1_gvcf/log/{SAMPLE}.variant_calling_detail_metrics"),
+        summaryMetrics = os.path.join(analysis.variants_dir, "1_gvcf/log/{SAMPLE}.variant_calling_summary_metrics")
     params:
-        metricsBname = os.path.join(analysis.variants_dir, "1_called/log/{SAMPLE}")
+        metricsBname = os.path.join(analysis.variants_dir, "1_gvcf/log/{SAMPLE}")
     conda:
         "../envs/gatk.yaml"
     resources:
@@ -30,7 +30,8 @@ rule variants_call:
             -L {input.intervals} \
             -O {output.vcf} \
             -dont-use-soft-clipped-bases \
-            --standard-min-confidence-threshold-for-calling 20
+            --standard-min-confidence-threshold-for-calling 20 \
+            --emit-ref-confidence GVCF
 
         gatk \
             CollectVariantCallingMetrics \
@@ -39,29 +40,76 @@ rule variants_call:
             --OUTPUT {params.metricsBname}
         """
 
-## We are only interested in Single Nucleotide Variants for ASE analysis
+rule variants_genomicsDB:
+    input:
+        sample_map = "misc/cohort.sample_map",
+        intervals = rules.intervals.output
+    output:
+        touch("done")
+    conda:
+        "../envs/gatk.yaml"
+    resources:
+        cpu = 4,
+        ntasks = 2,
+        mem_mb = 32000,
+        time = "01-00:00:00"
+    shell:
+        """
+        gatk --java-options "-Xmx4g -Xms4g" \
+            GenomicsDBImport \
+                --genomicsdb-workspace-path 07_variants/2_genomicsDB \
+                --intervals {input.intervals} \
+                --sample-name-map {input.sample_map} \
+                --tmp-dir . \
+                --merge-input-intervals
+        """
+
+rule variants_genotype:
+    input:
+        gendb_dir = "07_variants/2_genomicsDB",
+        refFa = rules.refs_downloadFa.output,
+    output:
+        vcf = "07_variants/3_jointGenotype/output.vcf.gz",
+        vcfIndex = "07_variants/3_jointGenotype/output.vcf.gz.tbi"
+    params:
+        gendb = "gendb://07_variants/2_genomicsDB"
+    conda:
+        "../envs/gatk.yaml"
+    resources:
+        cpu = 1,
+        ntasks = 2,
+        mem_mb = 32000,
+        time = "01-00:00:00"
+    shell:
+        """
+        gatk --java-options "-Xmx16g" GenotypeGVCFs \
+            -R {input.refFa} \
+            -V {params.gendb} \
+            -O {output.vcf}
+        """
+
 rule variants_extract:
     input:
-        vcf = rules.variants_call.output.vcf,
-        vcfIndex = rules.variants_call.output.vcfIndex,
+        vcf = rules.variants_genotype.output.vcf,
+        vcfIndex = rules.variants_genotype.output.vcfIndex,
         refFa = rules.refs_downloadFa.output,
         refIndex = rules.refs_refIndex.output,
         refDict = rules.refs_refDict.output,
         refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        vcf = temp(os.path.join(analysis.variants_dir, "2_extracted/{SAMPLE}.vcf.gz")),
-        vcfIndex = temp(os.path.join(analysis.variants_dir, "2_extracted/{SAMPLE}.vcf.gz.tbi")),
-        detailMetrics = os.path.join(analysis.variants_dir, "2_extracted/log/{SAMPLE}.variant_calling_detail_metrics"),
-        summaryMetrics = os.path.join(analysis.variants_dir, "2_extracted/log/{SAMPLE}.variant_calling_summary_metrics")
+        vcf = temp(os.path.join(analysis.variants_dir, "4_extract/output.vcf.gz")),
+        vcfIndex = temp(os.path.join(analysis.variants_dir, "4_extract/output.vcf.gz.tbi")),
+        detailMetrics = os.path.join(analysis.variants_dir, "4_extract/log/output.variant_calling_detail_metrics"),
+        summaryMetrics = os.path.join(analysis.variants_dir, "4_extract/log/output.variant_calling_summary_metrics")
     params:
-        metricsBname = os.path.join(analysis.variants_dir, "2_extracted/log/{SAMPLE}")
+        metricsBname = os.path.join(analysis.variants_dir, "4_extract/log/output")
     conda:
         "../envs/gatk.yaml"
     resources:
         cpu = 1,
         ntasks = 1,
-        mem_mb = 8000,
-        time = "00-12:00:00"
+        mem_mb = 16000,
+        time = "00-01:00:00"
     shell:
         """
         gatk \
@@ -69,7 +117,6 @@ rule variants_extract:
             -R {input.refFa} \
             -V {input.vcf} \
             --select-type-to-include SNP \
-            --restrict-alleles-to BIALLELIC \
             -O {output.vcf}
 
         gatk \
@@ -88,19 +135,19 @@ rule variants_filter:
         refDict = rules.refs_refDict.output,
         refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        vcf = temp(os.path.join(analysis.variants_dir, "3_filtered/{SAMPLE}.vcf.gz")),
-        vcfIndex = temp(os.path.join(analysis.variants_dir, "3_filtered/{SAMPLE}.vcf.gz.tbi")),
-        detailMetrics = os.path.join(analysis.variants_dir, "3_filtered/log/{SAMPLE}.variant_calling_detail_metrics"),
-        summaryMetrics = os.path.join(analysis.variants_dir, "3_filtered/log/{SAMPLE}.variant_calling_summary_metrics")
+        vcf = temp(os.path.join(analysis.variants_dir, "5_filter/output.vcf.gz")),
+        vcfIndex = temp(os.path.join(analysis.variants_dir, "5_filter/output.vcf.gz.tbi")),
+        detailMetrics = os.path.join(analysis.variants_dir, "5_filter/log/output.variant_calling_detail_metrics"),
+        summaryMetrics = os.path.join(analysis.variants_dir, "5_filter/log/output.variant_calling_summary_metrics")
     params:
-        metricsBname = os.path.join(analysis.variants_dir, "3_filtered/log/{SAMPLE}")
+        metricsBname = os.path.join(analysis.variants_dir, "5_filter/log/output")
     conda:
         "../envs/gatk.yaml"
     resources:
         cpu = 1,
         ntasks = 2,
         mem_mb = 8000,
-        time = "00-00:30:00"
+        time = "00-03:00:00"
     shell:
         """
         gatk \
@@ -133,19 +180,19 @@ rule variants_select:
         refDict = rules.refs_refDict.output,
         refDbsnp = rules.refs_downloadDbsnp.output
     output:
-        vcf = os.path.join(analysis.variants_dir, "4_selected/{SAMPLE}.vcf.gz"),
-        vcfIndex = os.path.join(analysis.variants_dir, "4_selected/{SAMPLE}.vcf.gz.tbi"),
-        detailMetrics = os.path.join(analysis.variants_dir, "4_selected/log/{SAMPLE}.variant_calling_detail_metrics"),
-        summaryMetrics = os.path.join(analysis.variants_dir, "4_selected/log/{SAMPLE}.variant_calling_summary_metrics")
+        vcf = os.path.join(analysis.variants_dir, "6_select/output.vcf.gz"),
+        vcfIndex = os.path.join(analysis.variants_dir, "6_select/output.vcf.gz.tbi"),
+        detailMetrics = os.path.join(analysis.variants_dir, "6_select/log/output.variant_calling_detail_metrics"),
+        summaryMetrics = os.path.join(analysis.variants_dir, "6_select/log/output.variant_calling_summary_metrics")
     params:
-        metricsBname = os.path.join(analysis.variants_dir, "4_selected/log/{SAMPLE}")
+        metricsBname = os.path.join(analysis.variants_dir, "6_select/log/output")
     conda:
         "../envs/gatk.yaml"
     resources:
         cpu = 1,
         ntasks = 1,
         mem_mb = 8000,
-        time = "00-00:30:00"
+        time = "00-03:00:00"
     shell:
         """
         gatk \

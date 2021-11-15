@@ -18,3 +18,4 @@ refs/*
 .snakemake/
 smk/log/
 *__pycache__*
+07_variants/2_genomicsDB/*

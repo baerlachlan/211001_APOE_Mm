@@ -137,16 +137,8 @@ class ASEAnalysis:
         )
         self.bqsr = self.bqsr_firstPass + self.bqsr_secondPass + self.bqsr_analyzeCovariates
 
-        ## ASE read counts
-        self.aseRC_wasp = expand(
-            os.path.join(self.aseRC_dir, "wasp/{SAMPLE}.tsv"),
-            SAMPLE=self.samples
-        )
-        self.aseRC_no_wasp = expand(
-            os.path.join(self.aseRC_dir, "no_wasp/{SAMPLE}.tsv"),
-            SAMPLE=self.samples
-        )
-        self.aseRC = self.aseRC_wasp + self.aseRC_no_wasp
+        ## Final variants
+        self.variants = [os.path.join(self.variants_dir, "6_select/output.vcf.gz")]
 
         ## All outputs
-        self.outputs = self.intervals + self.fqc + self.bqsr + self.aseRC
+        self.outputs = self.intervals + self.fqc + self.bqsr + self.variants

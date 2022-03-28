@@ -1,0 +1,29 @@
+samples_tsv:
+
+fastq_ext: ".fastq.gz"
+
+pair_tags: [".bam_R1", ".bam_R2"]
+
+ref:
+  species: "mus_musculus"
+  assembly: "GRCm39"
+  ensembl_release: 104
+
+align:
+  read_length: 50
+
+umi:
+  activate: False
+  add_header:
+    activate: False
+    tag:
+
+merge_samples:
+  activate: False
+  tags:
+
+bootstrap_known_variants:
+  activate: False
+
+ase_counts:
+  activate: True

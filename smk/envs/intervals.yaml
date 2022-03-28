@@ -1,6 +1,0 @@
-channels:
- - bioconda
-dependencies:
- - r-magrittr
- - r-stringr
- - bioconductor-annotationhub

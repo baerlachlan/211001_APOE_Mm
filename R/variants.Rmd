@@ -1,0 +1,373 @@
+---
+title: "Variants Analysis"
+subtitle: "211130_Q96K97del_A603fs dataset"
+author: "Lachlan Baer"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    fig_width: 8
+    fig_height: 6
+    fig_align: "center"
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  error = FALSE, 
+  fig.align = "center"
+)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+# Setup 
+
+```{r packages}
+suppressPackageStartupMessages({
+  ## Common
+  library(tidyverse)
+  library(magrittr)
+  library(future.apply)
+  library(here)
+  library(AnnotationHub)
+  library(purrr)
+  library(scales)
+  library(kableExtra)
+  library(tictoc)
+  library(ggrepel)
+  library(RColorBrewer)
+  library(ggpubr)
+  library(pander)
+  library(rmarkdown)
+  ## Project specific
+  library(VariantAnnotation)
+  library(Gviz)
+  library(zoo)
+  library(msigdbr)
+})
+```
+
+```{r options}
+if (interactive()) setwd(here::here())
+theme_set(theme_bw())
+cores <- availableCores() - 1
+```
+
+```{r funcs}
+source("~/bioinformatics/bioToolkit/lbFuncs.R")
+```
+
+```{r projDir}
+## Choose either local or remote project directory
+# projDir <- here()
+projDir <- "/hpcfs/users/a1647910/211130_Q96K97del_A603fs"
+```
+
+```{r opts}
+options(ucscChromosomeNames = FALSE)
+```
+
+## EnsDb
+
+```{r ensParams}
+ens_species <- "Mus musculus"
+ens_release <- "104"
+ens_assembly <- "GRCm39"
+```
+
+```{r ensDb}
+ah <- AnnotationHub() %>%
+  subset(species == ens_species) %>%
+  subset(rdataclass == "EnsDb")
+ahId <- ah$ah_id[str_detect(ah$title, ens_release)]
+ensDb <- ah[[ahId]]
+```
+
+```{r chrInfo}
+chrInfo <- getChromInfoFromEnsembl(ens_assembly, release = ens_release) %>%
+  dplyr::filter(coord_system == "chromosome")
+primary_chrs <- chrInfo$name
+```
+
+```{r genes}
+genes <- genes(ensDb, filter = SeqNameFilter(primary_chrs))
+mcols(genes) <- mcols(genes)[
+  c("gene_id", "gene_name", "gene_biotype", "entrezid")
+]
+```
+
+```{r exons}
+exons <- exonsBy(ensDb, by = "gene", filter = SeqNameFilter(primary_chrs))
+```
+
+## Metadata
+
+```{r metadata}
+metadata <- read_tsv(here("misc/SYNAPSE_METADATA_MANIFEST.tsv")) %>%
+  left_join(read_csv(here("misc/metaAPOE.csv"))) %>%
+  dplyr::select(
+    sample = specimenID, species, genotypeBackground, litter, dateBirth,
+    dateDeath, genotype = Genotype, sex = Sex, age = Age, lane, basename = name,
+    modelSystemName, individualID, study
+  ) %>%
+  dplyr::filter(str_detect(sample, "_3M_")) %>%
+  mutate(basename = str_remove(basename, ".bam_R(1|2).fastq.gz")) %>%
+  distinct(sample, .keep_all = TRUE) %>%
+  mutate(
+    group = as.factor(paste0(genotype, "_", age, "_", sex)),
+    genotype = as.factor(genotype)
+  ) %>%
+  dplyr::arrange(genotype, sample)
+```
+
+```{r genoCols}
+genoCols <- metadata$genotype %>%
+  unique() %>%
+  length() %>%
+  brewer.pal("Set1") %>%
+  setNames(unique(metadata$genotype))
+```
+
+```{r samples_byGroup}
+samples_byGroup <- metadata %>%
+  split(f = .$group) %>%
+  sapply(function(x){
+    pull(x, sample)
+  }, simplify = FALSE)
+```
+
+# DE data
+
+```{r deData}
+topDE <- readRDS(here("files/topTables_cqn.Rds"))
+```
+
+```{r deGenes}
+deGenes <- sapply(topDE, dplyr::filter, DE, simplify = FALSE)
+```
+
+# Variation
+
+```{r vcf}
+vcf_file <- file.path(
+  "/hpcfs/users/a1647910/211001_APOE_Mm_ASE",
+  "analysis-variants/results/07_variants/6_select/all_samples.vcf.gz"
+)
+svp <- ScanVcfParam(info = "", geno = c("GT", "GQ"))
+vcf <- suppressWarnings({
+  readVcf(vcf_file, param = svp)
+})
+```
+
+```{r gr}
+gr <- rowRanges(vcf)
+mcols(gr) <- NULL
+gr <- gr %>%
+  as.data.frame() %>%
+  droplevels() %>%
+  GRanges()
+```
+
+```{r gt}
+unphase_GTs <- function(x){
+  str_replace(x, "\\|", "\\/")
+}
+gt <- geno(vcf)$GT %>%
+  as.data.frame() %>%
+  mutate(across(everything(), unphase_GTs)) %>%
+  set_colnames(str_remove(colnames(.), "\\.FCHJKY5BBXX.+"))
+```
+
+## Between groups
+
+### Allelic dissimilarity
+
+```{r allele_file}
+allele_file <- file.path(here(), "files", "allele_stats.Rds")
+```
+
+```{r allele_stats}
+## Takes 15-20 mins to run so .Rds saved for convenience
+if (!file.exists(allele_file)) {
+  allele_stats <- lapply(samples_byGroup, function(samples){
+    apply(gt[,samples], 1, function(genos){
+      alleles <- genos %>%
+        as.character() %>%
+        str_split("/") %>%
+        unlist()
+      n_called <- sum(alleles != ".")
+      n_nocall <- sum(alleles == ".")
+      n_0 <- sum(alleles == "0")
+      n_1 <- sum(alleles == "1")
+      n_2 <- sum(alleles == "2")
+      n_3 <- sum(alleles == "3")
+      tibble(
+        n_called = n_called,
+        n_nocall = n_nocall,
+        n_0 = n_0,
+        n_1 = n_1,
+        n_2 = n_2,
+        n_3 = n_3,
+      )
+    }) %>%
+      bind_rows()
+  })
+  saveRDS(object = allele_stats, file = allele_file)
+} else {
+  allele_stats <- readRDS(allele_file)
+}
+```
+
+```{r allele_props}
+allele_props <- lapply(allele_stats, function(x){
+  x %>%
+    mutate(
+      prop_ref = ifelse(n_called > n_nocall, n_0 / n_called, NA),
+      prop_called = n_called / (n_called + n_nocall)
+    )
+})
+```
+
+```{r alleleDiss}
+diss_win <- 51
+alleleDiss <- lapply(
+  list(
+    allele_props[c("APOE2_3M_female", "APOE3_3M_female")],
+    allele_props[c("APOE2_3M_male", "APOE3_3M_male")],
+    allele_props[c("APOE4_3M_female", "APOE3_3M_female")],
+    allele_props[c("APOE4_3M_male", "APOE3_3M_male")]
+  ),
+  function(props){
+    diss <- gr
+    diss$comp <- abs(props[[1]]$prop_ref - props[[2]]$prop_ref)
+    diss$qual_ave <- (props[[1]]$prop_called + props[[2]]$prop_called) / 2
+    diss <- as_tibble(diss) %>%
+      dplyr::filter(!is.na(comp)) %>%
+      split(f = .$seqnames) %>%
+      lapply(function(chr){
+        dplyr::mutate(
+          chr,
+          comp_rollmean = rollmean(comp, k = diss_win, fill = NA),
+          qual_rollmean = rollmean(qual_ave, k = diss_win, fill = NA),
+        ) %>%
+          dplyr::select(-c(comp, qual_ave))
+      }) %>%
+      bind_rows() %>%
+      GRanges()
+  }
+) %>%
+  set_names(c("APOE2v3_female", "APOE2v3_male", "APOE4v3_female", "APOE4v3_male"))
+```
+
+### logFC
+
+```{r lfc}
+lfc_win <- 51
+lfc <- lapply(topDE, function(x){
+  x %>%
+    dplyr::select(
+      # Don't include strand because allelic differences between groups is consistent between strands
+      gene_id, gene_name, logFC, seqnames = chromosome, start, end, width  
+    ) %>%
+    dplyr::filter(seqnames %in% primary_chrs) %>%
+    mutate(abs.logFC = abs(logFC)) %>%
+    split(f = .$seqnames) %>%
+    lapply(function(chr){
+      mutate(
+        chr,
+        lfc_rollmean = rollmean(abs.logFC, k = lfc_win, fill = NA)
+      )
+    }) %>%
+    bind_rows() %>%
+    GRanges()
+})
+```
+
+### Visualisation
+
+```{r plot_alleleDiss}
+plot_alleleDiss <- function(
+  chr, genes,
+  diss, diss_win, diss_type, diss_trans = 1,
+  lfc, lfc_win, lfc_type, lfc_trans = 1,
+  title
+){
+  axis_track <- GenomeAxisTrack(add53=TRUE)
+  gene_track <- genes %>%
+    plyranges::filter(seqnames == chr) %>%
+    plyranges::mutate(symbol = gene_name) %>%
+    GeneRegionTrack(
+      name = "Genes",
+      transcriptAnnotation = "symbol",
+      showTranscriptId = TRUE,
+      fontcolor.group = 1,
+      cex.group = 0.5,
+      rotation.group = 0,
+      size = 0.5
+    )
+  diss_track <- diss[,"comp_rollmean"] %>%
+    plyranges::filter(seqnames == chr) %>%
+    DataTrack(
+      type = diss_type,
+      name = "Allelic dissimilarity",
+      window = -1,
+      windowSize = 1,
+      yTicksAt = seq(0, 1, 0.2),
+      ylim = c(0, 1),
+      transformation = function(x){x^(diss_trans)}
+    )
+  lfc_track <- lfc[,"lfc_rollmean"] %>%
+    plyranges::filter(seqnames == chr) %>%
+    DataTrack(
+      type = lfc_type,
+      name = "Absolute logFC",
+      window = -1,
+      windowSize = 1,
+      showAxis = FALSE,
+      transformation = function(x){x^(lfc_trans)}
+    )
+  plotTracks(
+    list(axis_track, gene_track, diss_track, lfc_track),
+    main = title,
+    cex.main = 1,
+    background.panel = "#FFFEDB",
+    background.title = "#814A00"
+  )
+}
+```
+
+```{r plot1}
+chr <- "7"
+ind <- 4
+plot_alleleDiss(
+  chr = chr, genes = genes[deGenes[[ind]]$gene_id],
+  diss = alleleDiss[[ind]], diss_win = diss_win, diss_type = "l", diss_trans = 1,
+  lfc = lfc[[ind]], lfc_win = lfc_win, lfc_type = "heatmap", lfc_trans = 1,
+  title = paste0(
+    names(deGenes[ind]),
+    " - chr ", chr,
+    " - dissimilarity window of ", diss_win, " SNVs",
+    " - logFC window of ", lfc_win, " genes"
+    )
+)
+```
+
+Circos plot
+
+Look at regulatory TFT datasets
+
+Try quasi likelihood for DE testing
+
+Give a summary of window sizes
+
+Look at the clustered DE genes near naglu
+- exclude naglu and see whether 
+- Plot all the genes belonging to the gene set on variation plot

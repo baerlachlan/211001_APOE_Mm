@@ -606,3 +606,21 @@ Heatmap(
   )
 )
 ```
+
+```{r}
+files <- list.files("/hpcfs/")
+```
+
+```{r}
+basenames <- list.files(
+  "/hpcfs/users/a1647910/210408_psen1_fADfAI_snv/00_rawData/fastq/",
+  pattern = "R(1|2)"
+  ) %>%
+  str_remove("_R(1|2).fastq.gz") %>%
+  unique()
+samples <- basenames %>%
+  str_remove("_L00(1|2)")
+tibble(basename = basenames, sample = samples, read_group = basenames) %>%
+  write_tsv("/hpcfs/users/a1647910/psen1_rerun/smk/data/samples.tsv")
+```
+

@@ -52,6 +52,7 @@ suppressPackageStartupMessages({
   library(Gviz)
   library(zoo)
   library(msigdbr)
+  library(viridis)
 })
 ```
 
@@ -237,7 +238,7 @@ allele_props <- lapply(allele_stats, function(x){
 ```
 
 ```{r alleleDiss}
-diss_win <- 51
+diss_win <- 21
 alleleDiss <- lapply(
   list(
     allele_props[c("APOE2_3M_female", "APOE3_3M_female")],
@@ -257,6 +258,7 @@ alleleDiss <- lapply(
           chr,
           comp_rollmean = rollmean(comp, k = diss_win, fill = NA),
           qual_rollmean = rollmean(qual_ave, k = diss_win, fill = NA),
+          win_size = lead(start, n = 10) - lag(start, n = 10)
         ) %>%
           dplyr::select(-c(comp, qual_ave))
       }) %>%
@@ -270,12 +272,12 @@ alleleDiss <- lapply(
 ### logFC
 
 ```{r lfc}
-lfc_win <- 51
+lfc_win <- 21
 lfc <- lapply(topDE, function(x){
   x %>%
     dplyr::select(
       # Don't include strand because allelic differences between groups is consistent between strands
-      gene_id, gene_name, logFC, seqnames = chromosome, start, end, width  
+      gene_id, gene_name, logFC, seqnames = chromosome, start, end, width
     ) %>%
     dplyr::filter(seqnames %in% primary_chrs) %>%
     mutate(abs.logFC = abs(logFC)) %>%
@@ -300,26 +302,28 @@ plot_alleleDiss <- function(
   lfc, lfc_win, lfc_type, lfc_trans = 1,
   title
 ){
-  axis_track <- GenomeAxisTrack(add53=TRUE)
+  axis_track <- GenomeAxisTrack(add53 = TRUE, add35 = TRUE)
   gene_track <- genes %>%
     plyranges::filter(seqnames == chr) %>%
     plyranges::mutate(symbol = gene_name) %>%
     GeneRegionTrack(
-      name = "Genes",
+      name = "DE Genes",
       transcriptAnnotation = "symbol",
       showTranscriptId = TRUE,
       fontcolor.group = 1,
       cex.group = 0.5,
       rotation.group = 0,
-      size = 0.5
+      size = 0.2
     )
   diss_track <- diss[,"comp_rollmean"] %>%
     plyranges::filter(seqnames == chr) %>%
     DataTrack(
       type = diss_type,
-      name = "Allelic dissimilarity",
+      name = "Between-group genetic dissimilarity",
       window = -1,
       windowSize = 1,
+      col = "grey30",
+      col.axis = "black",
       yTicksAt = seq(0, 1, 0.2),
       ylim = c(0, 1),
       transformation = function(x){x^(diss_trans)}
@@ -329,28 +333,32 @@ plot_alleleDiss <- function(
     DataTrack(
       type = lfc_type,
       name = "Absolute logFC",
+      size = 1.5,
       window = -1,
       windowSize = 1,
-      showAxis = FALSE,
+      col.axis = "black",
+      showColorBar = TRUE,
+      gradient = viridis(100, option = "D"),
       transformation = function(x){x^(lfc_trans)}
     )
   plotTracks(
     list(axis_track, gene_track, diss_track, lfc_track),
     main = title,
     cex.main = 1,
-    background.panel = "#FFFEDB",
-    background.title = "#814A00"
+    col.title = "black",
+    background.panel = "white",
+    background.title = "white"
   )
 }
 ```
 
 ```{r plot1}
-chr <- "7"
-ind <- 4
+chr <- "15"
+ind <- 1
 plot_alleleDiss(
   chr = chr, genes = genes[deGenes[[ind]]$gene_id],
   diss = alleleDiss[[ind]], diss_win = diss_win, diss_type = "l", diss_trans = 1,
-  lfc = lfc[[ind]], lfc_win = lfc_win, lfc_type = "heatmap", lfc_trans = 1,
+  lfc = lfc[[ind]], lfc_win = lfc_win, lfc_type = "heatmap", lfc_trans = 1/3,
   title = paste0(
     names(deGenes[ind]),
     " - chr ", chr,
@@ -371,3 +379,4 @@ Give a summary of window sizes
 Look at the clustered DE genes near naglu
 - exclude naglu and see whether 
 - Plot all the genes belonging to the gene set on variation plot
+put apoe on plots

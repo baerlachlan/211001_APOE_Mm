@@ -11,7 +11,7 @@ output:
     fig_height: 6
     fig_align: "center"
     code_folding: hide
-editor_options: 
+editor_options:
   chunk_output_type: console
 ---
 
@@ -20,13 +20,13 @@ knitr::opts_chunk$set(
   echo = TRUE,
   message = FALSE,
   warning = FALSE,
-  error = FALSE, 
+  error = FALSE,
   fig.align = "center"
 )
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 ```
 
-# Setup 
+# Setup
 
 ```{r packages}
 suppressPackageStartupMessages({
@@ -112,12 +112,6 @@ mcols(genes) <- mcols(genes)[
 ] %>%
   as.data.frame() %>%
   left_join(geneGc)
-```
-
-```{r chrInfo}
-chrInfo <- getChromInfoFromEnsembl(ens_assembly, release = ens_release) %>%
-  dplyr::filter(coord_system == "chromosome")
-primary_chrs <- chrInfo$name
 ```
 
 An `EnsDb` object was obtained for Ensembl release `r ens_release` with the `AnnotationHub` package.
@@ -224,7 +218,7 @@ cpm <- dgeList %>%
 ```{r}
 pca <- cpm %>%
   t() %>%
-  prcomp() 
+  prcomp()
 pcaVars <- percent_format(0.1)(summary(pca)$importance["Proportion of Variance",])
 ```
 
@@ -266,9 +260,9 @@ contrasts <- makeContrasts(
 
 ```{r, fig.height=6, fig.width=6, fig.cap = "*Visualisation of the design matrix*"}
 pheatmap(
-  design[metadata$sample,], 
-  cluster_cols = FALSE, 
-  cluster_rows = FALSE, 
+  design[metadata$sample,],
+  cluster_cols = FALSE,
+  cluster_rows = FALSE,
   color = c("white", "grey50"),
   annotation_row = dgeList$samples["genotype"],
   annotation_colors = list(genotype = genoCols),
@@ -297,7 +291,7 @@ topTables <- colnames(contrasts) %>%
       as_tibble() %>%
       arrange(PValue) %>%
       dplyr::select(
-        gene_id, gene_name, logFC, logCPM, PValue, FDR, everything()  
+        gene_id, gene_name, logFC, logCPM, PValue, FDR, everything()
       ) %>%
       mutate(
         contrast = x,
@@ -317,7 +311,7 @@ With this criteria, the following genes were classified as DE:
 for (ind in seq_along(topTables)) {
   print({
     topTables[[ind]] %>%
-      dplyr::filter(DE) %>% 
+      dplyr::filter(DE) %>%
       dplyr::select(gene_id, gene_name, chromosome, logFC, logCPM, PValue, FDR, bonfP) %>%
       mutate(
         logCPM = formatC(logCPM, digits = 2, format = "f"),

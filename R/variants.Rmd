@@ -205,28 +205,32 @@ allele_file <- file.path(here(), "files", "allele_stats.Rds")
 ```{r allele_stats}
 ## Takes 15-20 mins to run so .Rds saved for convenience
 if (!file.exists(allele_file)) {
-  allele_stats <- lapply(samples_byGroup, function(samples){
+  gr_tbl <- as_tibble(gr)
+  allele_counts <- lapply(samples_byGroup, function(samples){
     apply(gt[,samples], 1, function(genos){
       alleles <- genos %>%
         as.character() %>%
         str_split("/") %>%
         unlist()
-      n_called <- sum(alleles != ".")
-      n_nocall <- sum(alleles == ".")
-      n_0 <- sum(alleles == "0")
-      n_1 <- sum(alleles == "1")
-      n_2 <- sum(alleles == "2")
-      n_3 <- sum(alleles == "3")
       tibble(
-        n_called = n_called,
-        n_nocall = n_nocall,
-        n_0 = n_0,
-        n_1 = n_1,
-        n_2 = n_2,
-        n_3 = n_3,
+        n_called = sum(alleles != "."),
+        n_nocall = sum(alleles == "."),
+        n_0 = sum(alleles == "0"),
+        n_1 = sum(alleles == "1"),
+        n_2 = sum(alleles == "2"),
+        n_3 = sum(alleles == "3")
       )
     }) %>%
       bind_rows()
+  })
+  allele_stats <- lapply(allele_counts, function(counts){
+    cbind(gr_tbl, counts) %>%
+      mutate(
+        prop_ref = ifelse(n_called > n_nocall, n_0 / n_called, NA),
+        prop_called = n_called / (n_called + n_nocall)
+      ) %>%
+      nest(allele_counts = c(n_called, n_nocall, n_0, n_1, n_2, n_3)) %>%
+      GRanges()
   })
   saveRDS(object = allele_stats, file = allele_file)
 } else {
@@ -234,30 +238,25 @@ if (!file.exists(allele_file)) {
 }
 ```
 
-```{r allele_props}
-allele_props <- lapply(allele_stats, function(x){
-  x %>%
-    mutate(
-      prop_ref = ifelse(n_called > n_nocall, n_0 / n_called, NA),
-      prop_called = n_called / (n_called + n_nocall)
-    )
-})
-```
-
-```{r alleleDiss}
+```{r allele_diss}
 diss_win <- 21
-alleleDiss <- lapply(
+allele_diss <- lapply(
   list(
-    allele_props[c("APOE2_3M_female", "APOE3_3M_female")],
-    allele_props[c("APOE2_3M_male", "APOE3_3M_male")],
-    allele_props[c("APOE4_3M_female", "APOE3_3M_female")],
-    allele_props[c("APOE4_3M_male", "APOE3_3M_male")]
+    allele_stats[c("APOE2_3M_female", "APOE3_3M_female")],
+    allele_stats[c("APOE2_3M_male", "APOE3_3M_male")],
+    allele_stats[c("APOE4_3M_female", "APOE3_3M_female")],
+    allele_stats[c("APOE4_3M_male", "APOE3_3M_male")],
+    allele_stats[c("APOE2_3M_female", "APOE2_3M_male")],
+    allele_stats[c("APOE3_3M_female", "APOE3_3M_male")],
+    allele_stats[c("APOE4_3M_female", "APOE4_3M_male")]
   ),
   function(props){
-    diss <- gr
-    diss$comp <- abs(props[[1]]$prop_ref - props[[2]]$prop_ref)
-    diss$qual_ave <- (props[[1]]$prop_called + props[[2]]$prop_called) / 2
-    diss <- as_tibble(diss) %>%
+    gr %>%
+      as_tibble() %>%
+      mutate(
+        comp = abs(props[[1]]$prop_ref - props[[2]]$prop_ref),
+        qual_ave = (props[[1]]$prop_called + props[[2]]$prop_called) / 2
+      ) %>%
       dplyr::filter(!is.na(comp)) %>%
       split(f = .$seqnames) %>%
       lapply(function(chr){
@@ -265,16 +264,25 @@ alleleDiss <- lapply(
           chr,
           comp_rollmean = rollmean(comp, k = diss_win, fill = NA),
           qual_rollmean = rollmean(qual_ave, k = diss_win, fill = NA),
-          win_size = lead(start, n = 10) - lag(start, n = 10)
+          win_start = lag(start, n = 10),
+          win_end = lead(start, n = 10),
+          win_size = win_end - win_start
         ) %>%
           dplyr::select(-c(comp, qual_ave))
       }) %>%
       bind_rows() %>%
       GRanges()
-    diss
   }
 ) %>%
-  set_names(c("APOE2v3_female", "APOE2v3_male", "APOE4v3_female", "APOE4v3_male"))
+  set_names(c(
+    "APOE2v3_female",
+    "APOE2v3_male",
+    "APOE4v3_female",
+    "APOE4v3_male",
+    "APOE2_femalevmale",
+    "APOE3_femalevmale",
+    "APOE4_femalevmale"
+  ))
 ```
 
 ### logFC
@@ -303,19 +311,32 @@ lfc <- lapply(topDE, function(x){
 
 ### Visualisation
 
-```{r plot_alleleDiss}
-plot_alleleDiss <- function(
-  chr, genes, highlight = TRUE, mutation = NULL,
-  diss, diss_win, diss_type, diss_trans = 1,
-  lfc, lfc_win, lfc_type, lfc_trans = 1,
+```{r plot_allele_diss}
+plot_allele_diss <- function(
+  chr, genes = NULL, mutation = NULL,
+  diss, diss_type = "l", diss_trans = 1, highlight_genes = TRUE, 
+  lfc = NULL, lfc_type = "heatmap", lfc_trans = 1/3,
   title
 ){
-  genes <- genes %>%
-    plyranges::filter(seqnames == chr) %>%
-    plyranges::mutate(symbol = gene_name)
-  mutation <- mutation %>%
-    plyranges::filter(seqnames == chr) %>%
-    plyranges::mutate(symbol = gene_name)
+  tracks <- list()
+  
+  if (length(mutation)) {
+    mutation <- mutation %>%
+      plyranges::filter(seqnames == chr) %>%
+      plyranges::mutate(symbol = gene_name)
+    mutant_track <- GeneRegionTrack(
+      range = mutation,
+      transcriptAnnotation = "symbol",
+      col = "white",
+      fill = "white",
+      showTranscriptId = TRUE,
+      fontcolor.group = "red",
+      cex.group = 0.6,
+      size = 0.3
+    )
+    append(tracks, mutant_track)
+  }
+  
   axis_track <- GenomeAxisTrack(
     add53 = TRUE,
     add35 = TRUE,
@@ -328,25 +349,24 @@ plot_alleleDiss <- function(
       range = mutation
     )
   }
-  mutant_track <- GeneRegionTrack(
-    range = mutation,
-    transcriptAnnotation = "symbol",
-    col = "white",
-    fill = "white",
-    showTranscriptId = TRUE,
-    fontcolor.group = "red",
-    cex.group = 0.6,
-    size = 0.3
-  )
-  gene_track <- GeneRegionTrack(
-    range = genes,
-    name = "DE",
-    transcriptAnnotation = "symbol",
-    showTranscriptId = TRUE,
-    fontcolor.group = 1,
-    cex.group = 0.5,
-    size = 0.3
-  )
+  tracks <- list(axis_track)
+  
+  if (length(genes)) {
+    genes <- genes %>%
+      plyranges::filter(seqnames == chr) %>%
+      plyranges::mutate(symbol = gene_name)
+    gene_track <- GeneRegionTrack(
+      range = genes,
+      name = "DE",
+      transcriptAnnotation = "symbol",
+      showTranscriptId = TRUE,
+      fontcolor.group = 1,
+      cex.group = 0.5,
+      size = 0.3
+    )
+    tracks <- append(tracks, gene_track)
+  }
+  
   diss_track <- diss[,"comp_rollmean"] %>%
     plyranges::filter(seqnames == chr) %>%
     DataTrack(
@@ -360,7 +380,7 @@ plot_alleleDiss <- function(
       ylim = c(0, 1),
       transformation = function(x){x^(diss_trans)}
     )
-  if (highlight) {
+  if (all(length(genes) & highlight_genes)) {
     diss_track <- HighlightTrack(
       trackList = list(diss_track),
       range = genes,
@@ -368,21 +388,27 @@ plot_alleleDiss <- function(
       fill = "#ffd1d1"
     )
   }
-  lfc_track <- lfc[,"lfc_rollmean"] %>%
-    plyranges::filter(seqnames == chr) %>%
-    DataTrack(
-      type = lfc_type,
-      name = paste0("abs.logFC^(1/3)"),
-      size = 1.5,
-      window = -1,
-      windowSize = 1,
-      col.axis = "black",
-      showColorBar = TRUE,
-      gradient = viridis(100, option = "D"),
-      transformation = function(x){x^(lfc_trans)}
-    )
+  tracks <- append(tracks, diss_track)
+  
+  if (length(lfc)) {
+    lfc_track <- lfc[,"lfc_rollmean"] %>%
+      plyranges::filter(seqnames == chr) %>%
+      DataTrack(
+        type = lfc_type,
+        name = paste0("abs.logFC^(1/3)"),
+        size = 1.5,
+        window = -1,
+        windowSize = 1,
+        col.axis = "black",
+        showColorBar = TRUE,
+        gradient = viridis(100, option = "D"),
+        transformation = function(x){x^(lfc_trans)}
+      )
+    tracks <- append(tracks, lfc_track)
+  }
+  
   plotTracks(
-    list(mutant_track, axis_track, gene_track, diss_track, lfc_track),
+    trackList = tracks,
     main = title,
     cex.main = 1,
     col.title = "black",
@@ -394,33 +420,38 @@ plot_alleleDiss <- function(
 ```{r plot1}
 chr <- "7"
 ind <- 1
-plot_alleleDiss(
+plot_allele_diss(
   chr = chr,
   genes = genes[deGenes[[ind]]$gene_id],
   mutation = genes[genes$gene_name == "Apoe"],
-  diss = alleleDiss[[ind]], diss_win = diss_win, diss_type = "l", diss_trans = 1,
-  lfc = lfc[[ind]], lfc_win = lfc_win, lfc_type = "heatmap", lfc_trans = 1/3,
+  diss = allele_diss[[ind]], diss_type = "l", diss_trans = 1,
+  lfc = lfc[[ind]], lfc_type = "heatmap", lfc_trans = 1/3,
   title = paste0(
-    names(deGenes[ind]),
+    names(allele_diss[ind]),
     " - dissimilarity win of ", diss_win, " SNVs",
     " - logFC win of ", lfc_win, " genes"
   )
 )
 ```
 
-Circos plot
-
-Look at regulatory TFT datasets
-
-Try quasi likelihood for DE testing
+```{r plot1}
+chr <- "7"
+ind <- 7
+plot_allele_diss(
+  chr = chr,
+  mutation = genes[genes$gene_name == "Apoe"],
+  diss = allele_diss[[ind]], diss_type = "l", diss_trans = 1,
+  title = paste0(
+    names(allele_diss[ind]),
+    " - dissimilarity win of ", diss_win, " SNVs",
+    " - logFC win of ", lfc_win, " genes"
+  )
+)
+```
 
 Give a summary of window sizes
-
-Look at the clustered DE genes near naglu
-- exclude naglu and see whether
-- Plot all the genes belonging to the gene set on variation plot
-put apoe on plots
-
-05/04
 enrichment analysis on mouse data etqls vs non eqtls
-vis of dissimiliar region and plot diff of alellic expression levels for all genes in that region (like cpm plots)
+Try quasi likelihood for DE testing
+Look at regulatory TFT datasets
+
+Circos plot

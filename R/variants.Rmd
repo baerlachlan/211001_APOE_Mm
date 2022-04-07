@@ -93,9 +93,6 @@ ensDb <- ah[[ahId]]
 ```
 
 ```{r chrInfo}
-# chrInfo <- getChromInfoFromUCSC(ucsc_assembly) %>%
-#   dplyr::filter(assembled)
-# primary_chrs <- chrInfo$chrom
 chrInfo <- getChromInfoFromEnsembl(ens_assembly, release = ens_release) %>%
   dplyr::filter(coord_system == "chromosome")
 primary_chrs <- chrInfo$name
@@ -166,7 +163,7 @@ deGenes <- sapply(topDE, dplyr::filter, DE, simplify = FALSE)
 
 ```{r vcf}
 vcf_file <- file.path(
-  "/hpcfs/users/a1647910/211001_APOE_Mm_ASE",
+  "/hpcfs/users/a1647910/211001_APOE_Mm",
   "analysis-variants/results/07_variants/6_select/all_samples.vcf.gz"
 )
 svp <- ScanVcfParam(info = "", geno = c("GT", "GQ"))
@@ -346,7 +343,7 @@ lfc <- lapply(topDE, function(x){
 #### Window sizes
 
 ```{r}
-lapply(seq_along(lfc[1:4]), function(ind){
+lapply(seq_along(lfc), function(ind){
   lfc[[ind]] %>%
     as_tibble() %>%
     dplyr::filter(!is.na(win_size)) %>%
@@ -379,12 +376,12 @@ lapply(seq_along(lfc[1:4]), function(ind){
 ```{r plot_allele_diss}
 plot_allele_diss <- function(
   chr, genes = GRanges(), mutation = GRanges(),
-  diss, diss_type = "l", diss_trans = 1, highlight_genes = TRUE, 
+  diss, diss_type = "l", diss_trans = 1, highlight_genes = TRUE,
   lfc = NULL, lfc_type = "heatmap", lfc_trans = 1/3,
   title
 ){
   tracks <- list()
-  
+
   if (length(mutation)) {
     mutation <- mutation %>%
       plyranges::filter(seqnames == chr) %>%
@@ -401,7 +398,7 @@ plot_allele_diss <- function(
     )
     tracks <- append(tracks, mutant_track)
   }
-  
+
   axis_track <- GenomeAxisTrack(
     add53 = TRUE,
     add35 = TRUE,
@@ -415,7 +412,7 @@ plot_allele_diss <- function(
     )
   }
   tracks <- append(tracks, axis_track)
-  
+
   if (length(genes)) {
     genes <- genes %>%
       plyranges::filter(seqnames == chr) %>%
@@ -431,7 +428,7 @@ plot_allele_diss <- function(
     )
     tracks <- append(tracks, gene_track)
   }
-  
+
   diss_track <- diss[,"diss_rollmean"] %>%
     plyranges::filter(seqnames == chr) %>%
     DataTrack(
@@ -461,7 +458,7 @@ plot_allele_diss <- function(
     )
   }
   tracks <- append(tracks, diss_track)
-  
+
   if (length(lfc)) {
     lfc_track <- lfc[,"lfc_rollmean"] %>%
       plyranges::filter(seqnames == chr) %>%
@@ -478,7 +475,7 @@ plot_allele_diss <- function(
       )
     tracks <- append(tracks, lfc_track)
   }
-  
+
   plotTracks(
     trackList = tracks,
     main = title,

@@ -135,7 +135,7 @@ metadata <- read_tsv(here("misc/SYNAPSE_METADATA_MANIFEST.tsv")) %>%
     group = as.factor(paste0(genotype, "_", age, "_", sex)),
     genotype = as.factor(genotype)
   ) %>%
-  dplyr::arrange(genotype, sample)
+  dplyr::arrange(genotype, group)
 ```
 
 ```{r genoCols}
@@ -179,6 +179,13 @@ dgeList <- counts %>%
       dplyr::select(chromosome = seqnames, everything())
   ) %>%
   calcNormFactors()
+```
+
+```{r}
+dgeList_path <- here("files/dgeList.Rds")
+if (!file.exists(dgeList_path)) {
+  saveRDS(dgeList, dgeList_path)
+}
 ```
 
 Gene-level count data was loaded from `featureCounts` and imported into `R` as a `DGEList` object.

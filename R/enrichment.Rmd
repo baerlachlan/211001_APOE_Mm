@@ -1,0 +1,372 @@
+---
+title: "Enrichment Analysis"
+subtitle: "211001_APOE_Mm dataset"
+author: "Lachlan Baer"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    fig_width: 8
+    fig_height: 6
+    fig_align: "center"
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  error = FALSE, 
+  fig.align = "center"
+)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+# Setup 
+
+```{r packages}
+suppressPackageStartupMessages({
+  ## Common
+  library(tidyverse)
+  library(magrittr)
+  library(future.apply)
+  library(here)
+  library(AnnotationHub)
+  library(purrr)
+  library(scales)
+  library(kableExtra)
+  library(tictoc)
+  library(ggrepel)
+  library(RColorBrewer)
+  library(ggpubr)
+  library(pander)
+  library(rmarkdown)
+  ## Project specific
+  library(edgeR)
+  library(fgsea)
+  library(pheatmap)
+  library(cqn)
+  library(DT)
+  library(htmltools)
+  library(msigdbr)
+  library(goseq)
+})
+```
+
+```{r options}
+if (interactive()) setwd(here::here())
+theme_set(theme_bw())
+cores <- availableCores() - 1
+```
+
+```{r}
+source("~/bioinformatics/bioToolkit/lbFuncs.R")
+```
+
+## Annotations
+
+```{r ensParams}
+ens_species <- "Mus musculus"
+ens_release <- "104"
+ens_assembly <- "GRCm39"
+```
+
+```{r ensDb}
+ah <- AnnotationHub() %>%
+  subset(species == ens_species) %>%
+  subset(rdataclass == "EnsDb")
+ahId <- ah$ah_id[str_detect(ah$title, ens_release)]
+ensDb <- ah[[ahId]]
+```
+
+```{r transcripts}
+transcripts <- transcripts(ensDb)
+txLen <- exonsBy(ensDb, "tx") %>%
+  width() %>%
+  vapply(sum, integer(1))
+mcols(transcripts) <- mcols(transcripts)[
+  c("tx_id", "gene_id", "gc_content")
+] %>%
+  as.data.frame() %>%
+  mutate(length = txLen)
+```
+
+```{r geneGc}
+geneGc <- transcripts %>%
+  mcols() %>%
+  as_tibble() %>%
+  group_by(gene_id) %>%
+  summarise(
+    gc_content = sum(gc_content*length) / sum(length),
+    length = ceiling(median(length))
+  )
+```
+
+```{r genes}
+genes <- genes(ensDb) %>%
+  .[,c("gene_id", "gene_name", "gene_biotype", "entrezid")] %>%
+  as_tibble() %>%
+  # mutate(entrezid = lapply(entrezid, function(x){x})) %>%
+  left_join(geneGc) %>%
+  GRanges()
+```
+
+An `EnsDb` object was obtained for Ensembl release 101 with the `AnnotationHub` package.
+This contained the information required to set up gene and transcript annotations.
+Gene-level estimates of GC content and length were also generated which may be required as covariates in suitable analyses.
+
+```{r entrezGenes}
+entrezGenes <- genes %>%
+  as.data.frame() %>%
+  dplyr::filter(!is.na(entrezid)) %>%
+  mutate(entrezid = unAsIs(entrezid)) %>%
+  unnest(entrezid) %>%
+  dplyr::rename(entrez_gene = entrezid)
+```
+
+```{r geneChrs}
+geneChrs <- as_tibble(genes) %>%
+  dplyr::select(gene_id, chromosome = seqnames)
+```
+
+## Metadata
+
+```{r metadata}
+metadata <- read_tsv(here("misc/SYNAPSE_METADATA_MANIFEST.tsv")) %>%
+  left_join(read_csv(here("misc/metaAPOE.csv"))) %>%
+  dplyr::select(
+    sample = specimenID, species, genotypeBackground, litter, dateBirth,
+    dateDeath, genotype = Genotype, sex = Sex, age = Age, lane, basename = name,
+    modelSystemName, individualID, study
+  ) %>%
+  dplyr::filter(str_detect(sample, "_3M_")) %>%
+  mutate(basename = str_remove(basename, ".bam_R(1|2).fastq.gz")) %>%
+  distinct(sample, .keep_all = TRUE) %>%
+  mutate(
+    group = as.factor(paste0(genotype, "_", age, "_", sex)),
+    genotype = as.factor(genotype)
+  ) %>%
+  dplyr::arrange(genotype, group)
+```
+
+```{r genoCols}
+genoCols <- metadata$genotype %>%
+  unique() %>%
+  length() %>%
+  brewer.pal("Set1") %>%
+  setNames(unique(metadata$genotype))
+```
+
+```{r samples_byGroup}
+samples_byGroup <- metadata %>%
+  split(f = .$group) %>%
+  sapply(function(x){
+    pull(x, sample)
+  }, simplify = FALSE)
+```
+
+## Differential expression data
+
+```{r dgeList}
+dgeList <- readRDS(here("files/dgeList.Rds"))
+```
+
+```{r design}
+design <- model.matrix(~0 + group, data = dgeList$samples) %>%
+  set_colnames(str_remove(colnames(.), "group"))
+```
+
+```{r contrasts}
+contrasts <- makeContrasts(
+  APOE2v3_female = APOE2_3M_female - APOE3_3M_female,
+  APOE2v3_male = APOE2_3M_male - APOE3_3M_male,
+  APOE4v3_female = APOE4_3M_female - APOE3_3M_female,
+  APOE4v3_male = APOE4_3M_male - APOE3_3M_male,
+  levels = colnames(design)
+)
+```
+
+```{r topTables}
+topTables <- readRDS(here("files/topTables_cqn.Rds"))
+```
+
+## Variant data
+
+```{r diss_winRanges}
+diss_winRanges <- readRDS(here("files/diss_winRanges.Rds")) %>%
+  .[1:4]  # Only concerned with DE-tested comparisons
+```
+
+# Gene sets
+
+Multiple gene set databases were accessed with the `msigdbr` package.
+For this analysis the Hallmark, KEGG, Wikipathways, GO and chromosomal based gene sets were chosen.
+
+```{r}
+hm <- msigdbr(ens_species, category = "H") %>% 
+  left_join(entrezGenes) %>%
+  dplyr::filter(!is.na(gene_id)) %>%
+  distinct(gs_name, gene_id, .keep_all = TRUE)
+hmByGene <- hm %>%
+  split(f = .$gene_id) %>%
+  lapply(extract2, "gs_name")
+hmByID <- hm %>%
+  split(f = .$gs_name) %>%
+  lapply(extract2, "gene_id")
+```
+
+- The Hallmark gene sets consists of `r length(hmByID)` gene sets ranging from sizes of `r min(sapply(hmByID, length))` to `r max(sapply(hmByID, length))` genes.
+
+```{r}
+kg <- msigdbr(ens_species, category = "C2", subcategory = "CP:KEGG") %>%
+  left_join(entrezGenes) %>%
+  dplyr::filter(!is.na(gene_id)) %>%
+  distinct(gs_name, gene_id, .keep_all = TRUE)
+kgByGene <- kg %>%
+  split(f = .$gene_id) %>%
+  lapply(extract2, "gs_name")
+kgByID <- kg %>%
+  split(f = .$gs_name) %>%
+  lapply(extract2, "gene_id")
+```
+
+- The KEGG gene sets consists of `r length(kgByID)` gene sets ranging from sizes of `r min(sapply(kgByID, length))` to `r max(sapply(kgByID, length))` genes.
+
+```{r}
+wk <- msigdbr(ens_species, category = "C2", subcategory = "CP:WIKIPATHWAYS") %>% 
+  left_join(entrezGenes) %>%
+  dplyr::filter(!is.na(gene_id)) %>%
+  distinct(gs_name, gene_id, .keep_all = TRUE)
+wkByGene <- wk %>%
+  split(f = .$gene_id) %>%
+  lapply(extract2, "gs_name")
+wkByID <- wk %>%
+  split(f = .$gs_name) %>%
+  lapply(extract2, "gene_id")
+```
+
+- The Wikipathways gene sets consists of `r length(wkByID)` gene sets ranging from sizes of `r min(sapply(wkByID, length))` to `r max(sapply(wkByID, length))` genes.
+
+```{r}
+goSummaries <- url("https://uofabioinformaticshub.github.io/summaries2GO/data/goSummaries.RDS") %>%
+  readRDS() %>%
+  mutate(
+    Term = Term(id),
+    gs_name = Term %>% str_to_upper() %>% str_replace_all("[ -]", "_"),
+    gs_name = paste0("GO", ontology, "_", gs_name)
+  )
+minPath <- 3
+go <- msigdbr(ens_species, category = "C5") %>% 
+  left_join(entrezGenes) %>%
+  dplyr::filter(!is.na(gene_id)) %>%
+  left_join(goSummaries) %>% 
+  dplyr::filter(shortest_path >= minPath) %>%
+  distinct(gs_name, gene_id, .keep_all = TRUE)
+goByGene <- go %>%
+  split(f = .$gene_id) %>%
+  lapply(extract2, "gs_name")
+goByID <- go %>%
+  split(f = .$gs_name) %>%
+  lapply(extract2, "gene_id")
+```
+
+- The GO gene sets consists of `r length(goByID)` gene sets ranging from sizes of `r min(sapply(goByID, length))` to `r max(sapply(goByID, length))` genes.
+- GO gene sets were restricted to those with 3 or more steps back to the ontology root terms.
+
+```{r}
+chr <- as_tibble(genes)
+chrByGene <- chr %>%
+  split(f = .$gene_id) %>%
+  lapply(extract2, "seqnames")
+chrByID <- chr %>%
+  dplyr::filter(seqnames %in% seq(1:25)) %>%
+  droplevels() %>%
+  split(f = .$seqnames) %>%
+  lapply(extract2, "gene_id")
+```
+
+- The chromosomal gene sets consists of `r length(chrByID)` gene sets (chromosomes) ranging from sizes of `r min(sapply(chrByID, length))` to `r max(sapply(chrByID, length))` genes.
+
+# Enrichment testing
+
+```{r}
+kg_fry <- contrasts %>%
+  apply(MARGIN = 2, function(contrast){
+    cpm(dgeList$counts, log = TRUE) %>%
+      fry(
+        index = kgByID,
+        design = design,
+        contrast = contrast,
+        sort = "mixed"
+      ) %>% 
+      rownames_to_column("pathway") %>%
+      as_tibble()
+  })
+```
+
+```{r}
+kg_camera <- contrasts %>% 
+  apply(MARGIN = 2, function(contrast){
+    cpm(dgeList$counts, log = TRUE) %>% 
+      camera(
+        index = kgByID,
+        design = design, 
+        contrast = contrast
+      ) %>% 
+      rownames_to_column("pathway") %>% 
+      as_tibble()
+  })
+```
+
+# eQTL bias removal
+
+```{r}
+overlaps <- findOverlaps(GRanges(dgeList$genes), diss_winRanges$APOE2v3_female)
+genes_diss <- lapply(unique(queryHits(overlaps)), function(query){
+  subjects <- subjectHits(overlaps)[queryHits(overlaps) == query]
+  diss <- diss_winRanges$APOE2v3_female$diss_rollmean[subjects] %>%
+    mean()
+  dgeList$genes[query,] %>%
+    mutate(diss = diss)
+}) %>%
+  bind_rows() %>%
+  GRanges()
+genes_biased <- genes_diss %>%
+  as_tibble() %>%
+  dplyr::filter(diss > 0.5) %>%
+  pull(gene_id)
+```
+
+```{r}
+kg_fry_eqtl <- contrasts %>%
+  apply(MARGIN = 2, function(contrast){
+    cpm(dgeList$counts[!(rownames(dgeList$counts) %in% genes_biased),], log = TRUE) %>%
+      fry(
+        index = kgByID,
+        design = design,
+        contrast = contrast,
+        sort = "mixed"
+      ) %>% 
+      rownames_to_column("pathway") %>%
+      as_tibble()
+  })
+```
+
+```{r}
+kg_camera_eqtl <- contrasts %>%
+  apply(MARGIN = 2, function(contrast){
+    cpm(dgeList$counts[!(rownames(dgeList$counts) %in% genes_biased),], log = TRUE) %>% 
+      camera(
+        index = kgByID,
+        design = design, 
+        contrast = contrast
+      ) %>% 
+      rownames_to_column("pathway") %>% 
+      as_tibble()
+  })
+```

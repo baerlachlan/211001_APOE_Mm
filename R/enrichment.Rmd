@@ -12,7 +12,7 @@ output:
     fig_height: 6
     fig_align: "center"
     code_folding: hide
-editor_options: 
+editor_options:
   chunk_output_type: console
 ---
 
@@ -21,13 +21,13 @@ knitr::opts_chunk$set(
   echo = TRUE,
   message = FALSE,
   warning = FALSE,
-  error = FALSE, 
+  error = FALSE,
   fig.align = "center"
 )
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 ```
 
-# Setup 
+# Setup
 
 ```{r packages}
 suppressPackageStartupMessages({
@@ -48,13 +48,12 @@ suppressPackageStartupMessages({
   library(rmarkdown)
   ## Project specific
   library(edgeR)
-  library(fgsea)
+  library(limma)
   library(pheatmap)
   library(cqn)
   library(DT)
   library(htmltools)
   library(msigdbr)
-  library(goseq)
 })
 ```
 
@@ -84,9 +83,15 @@ ahId <- ah$ah_id[str_detect(ah$title, ens_release)]
 ensDb <- ah[[ahId]]
 ```
 
+```{r chrInfo}
+chrInfo <- getChromInfoFromEnsembl(ens_assembly, release = ens_release) %>%
+  dplyr::filter(coord_system == "chromosome")
+primary_chrs <- chrInfo$name
+```
+
 ```{r transcripts}
-transcripts <- transcripts(ensDb)
-txLen <- exonsBy(ensDb, "tx") %>%
+transcripts <- transcripts(ensDb, filter = SeqNameFilter(primary_chrs))
+txLen <- exonsBy(ensDb, "tx", filter = SeqNameFilter(primary_chrs)) %>%
   width() %>%
   vapply(sum, integer(1))
 mcols(transcripts) <- mcols(transcripts)[
@@ -108,10 +113,9 @@ geneGc <- transcripts %>%
 ```
 
 ```{r genes}
-genes <- genes(ensDb) %>%
+genes <- genes(ensDb, filter = SeqNameFilter(primary_chrs)) %>%
   .[,c("gene_id", "gene_name", "gene_biotype", "entrezid")] %>%
   as_tibble() %>%
-  # mutate(entrezid = lapply(entrezid, function(x){x})) %>%
   left_join(geneGc) %>%
   GRanges()
 ```
@@ -205,13 +209,14 @@ diss_winRanges <- readRDS(here("files/diss_winRanges.Rds")) %>%
 # Gene sets
 
 Multiple gene set databases were accessed with the `msigdbr` package.
-For this analysis the Hallmark, KEGG, Wikipathways, GO and chromosomal based gene sets were chosen.
+For this analysis the Hallmark, KEGG, Wikipathways and chromosomal based gene sets were chosen.
 
-```{r}
-hm <- msigdbr(ens_species, category = "H") %>% 
+```{r hm}
+hm <- msigdbr(ens_species, category = "H") %>%
   left_join(entrezGenes) %>%
   dplyr::filter(!is.na(gene_id)) %>%
-  distinct(gs_name, gene_id, .keep_all = TRUE)
+  distinct(gs_name, gene_id, .keep_all = TRUE) %>%
+  mutate(gs_name = str_remove(gs_name, "^HALLMARK_"))
 hmByGene <- hm %>%
   split(f = .$gene_id) %>%
   lapply(extract2, "gs_name")
@@ -222,11 +227,12 @@ hmByID <- hm %>%
 
 - The Hallmark gene sets consists of `r length(hmByID)` gene sets ranging from sizes of `r min(sapply(hmByID, length))` to `r max(sapply(hmByID, length))` genes.
 
-```{r}
+```{r kg}
 kg <- msigdbr(ens_species, category = "C2", subcategory = "CP:KEGG") %>%
   left_join(entrezGenes) %>%
   dplyr::filter(!is.na(gene_id)) %>%
-  distinct(gs_name, gene_id, .keep_all = TRUE)
+  distinct(gs_name, gene_id, .keep_all = TRUE) %>%
+  mutate(gs_name = str_remove(gs_name, "^KEGG_"))
 kgByGene <- kg %>%
   split(f = .$gene_id) %>%
   lapply(extract2, "gs_name")
@@ -237,11 +243,12 @@ kgByID <- kg %>%
 
 - The KEGG gene sets consists of `r length(kgByID)` gene sets ranging from sizes of `r min(sapply(kgByID, length))` to `r max(sapply(kgByID, length))` genes.
 
-```{r}
-wk <- msigdbr(ens_species, category = "C2", subcategory = "CP:WIKIPATHWAYS") %>% 
+```{r wk}
+wk <- msigdbr(ens_species, category = "C2", subcategory = "CP:WIKIPATHWAYS") %>%
   left_join(entrezGenes) %>%
   dplyr::filter(!is.na(gene_id)) %>%
-  distinct(gs_name, gene_id, .keep_all = TRUE)
+  distinct(gs_name, gene_id, .keep_all = TRUE) %>%
+  mutate(gs_name = str_remove(gs_name, "^WP_"))
 wkByGene <- wk %>%
   split(f = .$gene_id) %>%
   lapply(extract2, "gs_name")
@@ -252,49 +259,120 @@ wkByID <- wk %>%
 
 - The Wikipathways gene sets consists of `r length(wkByID)` gene sets ranging from sizes of `r min(sapply(wkByID, length))` to `r max(sapply(wkByID, length))` genes.
 
-```{r}
-goSummaries <- url("https://uofabioinformaticshub.github.io/summaries2GO/data/goSummaries.RDS") %>%
-  readRDS() %>%
-  mutate(
-    Term = Term(id),
-    gs_name = Term %>% str_to_upper() %>% str_replace_all("[ -]", "_"),
-    gs_name = paste0("GO", ontology, "_", gs_name)
-  )
-minPath <- 3
-go <- msigdbr(ens_species, category = "C5") %>% 
-  left_join(entrezGenes) %>%
-  dplyr::filter(!is.na(gene_id)) %>%
-  left_join(goSummaries) %>% 
-  dplyr::filter(shortest_path >= minPath) %>%
-  distinct(gs_name, gene_id, .keep_all = TRUE)
-goByGene <- go %>%
-  split(f = .$gene_id) %>%
-  lapply(extract2, "gs_name")
-goByID <- go %>%
-  split(f = .$gs_name) %>%
-  lapply(extract2, "gene_id")
+```{r chr}
+# chr <- as_tibble(genes)
+# chrByGene <- chr %>%
+#   split(f = .$gene_id) %>%
+#   lapply(extract2, "seqnames")
+# chrByID <- chr %>%
+#   dplyr::filter(seqnames %in% seq(1:25)) %>%
+#   droplevels() %>%
+#   split(f = .$seqnames) %>%
+#   lapply(extract2, "gene_id")
 ```
 
-- The GO gene sets consists of `r length(goByID)` gene sets ranging from sizes of `r min(sapply(goByID, length))` to `r max(sapply(goByID, length))` genes.
-- GO gene sets were restricted to those with 3 or more steps back to the ontology root terms.
+# Enrichment testing {.tabset}
 
-```{r}
-chr <- as_tibble(genes)
-chrByGene <- chr %>%
-  split(f = .$gene_id) %>%
-  lapply(extract2, "seqnames")
-chrByID <- chr %>%
-  dplyr::filter(seqnames %in% seq(1:25)) %>%
-  droplevels() %>%
-  split(f = .$seqnames) %>%
-  lapply(extract2, "gene_id")
+## Hallmark {.tabset .tabset-pills}
+
+```{r hm_fry}
+hm_fry <- contrasts %>%
+  apply(MARGIN = 2, function(contrast){
+    cpm(dgeList$counts, log = TRUE) %>%
+      fry(
+        index = hmByID,
+        design = design,
+        contrast = contrast,
+        sort = "mixed"
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+        PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
+        FDR.Mixed = formatC(FDR.Mixed, digits = 1, format = "e"),
+      )
+  })
 ```
 
-- The chromosomal gene sets consists of `r length(chrByID)` gene sets (chromosomes) ranging from sizes of `r min(sapply(chrByID, length))` to `r max(sapply(chrByID, length))` genes.
+```{r hm_camera}
+hm_camera <- contrasts %>%
+  apply(MARGIN = 2, function(contrast){
+    cpm(dgeList$counts, log = TRUE) %>%
+      camera(
+        index = hmByID,
+        design = design,
+        contrast = contrast
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+      )
+  })
+```
 
-# Enrichment testing
+### APOE 2v3 females {.tabset .tabset-pills}
+
+#### `camera`
 
 ```{r}
+datatable(hm_camera[[1]])
+```
+
+#### `fry`
+
+```{r}
+datatable(hm_fry[[1]])
+```
+
+### APOE 2v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(hm_camera[[2]])
+```
+
+#### `fry`
+
+```{r}
+datatable(hm_fry[[2]])
+```
+
+### APOE 4v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(hm_camera[[3]])
+```
+
+#### `fry`
+
+```{r}
+datatable(hm_fry[[3]])
+```
+
+### APOE 4v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(hm_camera[[4]])
+```
+
+#### `fry`
+
+```{r}
+datatable(hm_fry[[4]])
+```
+
+## KEGG {.tabset .tabset-pills}
+
+```{r kg_fry}
 kg_fry <- contrasts %>%
   apply(MARGIN = 2, function(contrast){
     cpm(dgeList$counts, log = TRUE) %>%
@@ -303,70 +381,545 @@ kg_fry <- contrasts %>%
         design = design,
         contrast = contrast,
         sort = "mixed"
-      ) %>% 
-      rownames_to_column("pathway") %>%
-      as_tibble()
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+        PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
+        FDR.Mixed = formatC(FDR.Mixed, digits = 1, format = "e"),
+      )
   })
 ```
 
-```{r}
-kg_camera <- contrasts %>% 
+```{r kg_camera}
+kg_camera <- contrasts %>%
   apply(MARGIN = 2, function(contrast){
-    cpm(dgeList$counts, log = TRUE) %>% 
+    cpm(dgeList$counts, log = TRUE) %>%
       camera(
         index = kgByID,
-        design = design, 
+        design = design,
         contrast = contrast
-      ) %>% 
-      rownames_to_column("pathway") %>% 
-      as_tibble()
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+      )
   })
 ```
 
-# eQTL bias removal
+### APOE 2v3 females {.tabset .tabset-pills}
+
+#### `camera`
 
 ```{r}
-overlaps <- findOverlaps(GRanges(dgeList$genes), diss_winRanges$APOE2v3_female)
-genes_diss <- lapply(unique(queryHits(overlaps)), function(query){
-  subjects <- subjectHits(overlaps)[queryHits(overlaps) == query]
-  diss <- diss_winRanges$APOE2v3_female$diss_rollmean[subjects] %>%
-    mean()
-  dgeList$genes[query,] %>%
-    mutate(diss = diss)
-}) %>%
-  bind_rows() %>%
-  GRanges()
-genes_biased <- genes_diss %>%
-  as_tibble() %>%
-  dplyr::filter(diss > 0.5) %>%
-  pull(gene_id)
+datatable(kg_camera[[1]])
 ```
 
+#### `fry`
+
 ```{r}
-kg_fry_eqtl <- contrasts %>%
+datatable(kg_fry[[1]])
+```
+
+### APOE 2v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(kg_camera[[2]])
+```
+
+#### `fry`
+
+```{r}
+datatable(kg_fry[[2]])
+```
+
+### APOE 4v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(kg_camera[[3]])
+```
+
+#### `fry`
+
+```{r}
+datatable(kg_fry[[3]])
+```
+
+### APOE 4v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(kg_camera[[4]])
+```
+
+#### `fry`
+
+```{r}
+datatable(kg_fry[[4]])
+```
+
+## Wikipathways {.tabset .tabset-pills}
+
+```{r wk_fry}
+wk_fry <- contrasts %>%
   apply(MARGIN = 2, function(contrast){
-    cpm(dgeList$counts[!(rownames(dgeList$counts) %in% genes_biased),], log = TRUE) %>%
+    cpm(dgeList$counts, log = TRUE) %>%
       fry(
-        index = kgByID,
+        index = wkByID,
         design = design,
         contrast = contrast,
         sort = "mixed"
-      ) %>% 
-      rownames_to_column("pathway") %>%
-      as_tibble()
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+        PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
+        FDR.Mixed = formatC(FDR.Mixed, digits = 1, format = "e"),
+      )
   })
 ```
 
-```{r}
-kg_camera_eqtl <- contrasts %>%
+```{r wk_camera}
+wk_camera <- contrasts %>%
   apply(MARGIN = 2, function(contrast){
-    cpm(dgeList$counts[!(rownames(dgeList$counts) %in% genes_biased),], log = TRUE) %>% 
+    cpm(dgeList$counts, log = TRUE) %>%
+      camera(
+        index = wkByID,
+        design = design,
+        contrast = contrast
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+      )
+  })
+```
+
+### APOE 2v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(wk_camera[[1]])
+```
+
+#### `fry`
+
+```{r}
+datatable(wk_fry[[1]])
+```
+
+### APOE 2v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(wk_camera[[2]])
+```
+
+#### `fry`
+
+```{r}
+datatable(wk_fry[[2]])
+```
+
+### APOE 4v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(wk_camera[[3]])
+```
+
+#### `fry`
+
+```{r}
+datatable(wk_fry[[3]])
+```
+
+### APOE 4v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(wk_camera[[4]])
+```
+
+#### `fry`
+
+```{r}
+datatable(wk_fry[[4]])
+```
+
+# eQTL bias removal {.tabset}
+
+```{r genes_diss_path}
+genes_diss_path <- here("files/genes_diss.Rds")
+```
+
+```{r genes_diss}
+## Takes 5 mins to run so .Rds saved for convenience
+if (!file.exists(genes_diss_path)) {
+  genes_diss <- lapply(diss_winRanges, function(winRanges){
+    overlaps <- findOverlaps(GRanges(dgeList$genes), winRanges)
+    lapply(unique(queryHits(overlaps)), function(query){
+      subjects <- subjectHits(overlaps)[queryHits(overlaps) == query]
+      diss <- winRanges$diss_rollmean[subjects] %>%
+        mean()
+      dgeList$genes[query,] %>%
+        mutate(diss = diss)
+    }) %>%
+      bind_rows() %>%
+      GRanges()
+  })
+  saveRDS(genes_diss, genes_diss_path)
+} else {
+  genes_diss <- readRDS(genes_diss_path)
+}
+```
+
+## Hallmark {.tabset .tabset-pills}
+
+```{r hm_fry_eqtl}
+hm_fry_eqtl <- colnames(contrasts) %>%
+  sapply(function(cont){
+    biased_genes <- genes_diss[[cont]] %>%
+      as_tibble() %>%
+      dplyr::filter(diss > 0.5) %>%
+      pull(gene_id)
+    cpm(
+      dgeList$counts[!(rownames(dgeList$counts) %in% biased_genes),],
+      log = TRUE
+    ) %>%
+      fry(
+        index = hmByID,
+        design = design,
+        contrast = contrasts[,cont],
+        sort = "mixed"
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+        PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
+        FDR.Mixed = formatC(FDR.Mixed, digits = 1, format = "e"),
+      )
+  }, simplify = FALSE)
+```
+
+```{r hm_camera_eqtl}
+hm_camera_eqtl <- colnames(contrasts) %>%
+  sapply(function(cont){
+    biased_genes <- genes_diss[[cont]] %>%
+      as_tibble() %>%
+      dplyr::filter(diss > 0.5) %>%
+      pull(gene_id)
+    cpm(
+      dgeList$counts[!(rownames(dgeList$counts) %in% biased_genes),],
+      log = TRUE
+    ) %>%
+      camera(
+        index = hmByID,
+        design = design,
+        contrast = contrasts[,cont]
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+      )
+  }, simplify = FALSE)
+```
+
+### APOE 2v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(hm_camera_eqtl[[1]])
+```
+
+#### `fry`
+
+```{r}
+datatable(hm_fry_eqtl[[1]])
+```
+
+### APOE 2v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(hm_camera_eqtl[[2]])
+```
+
+#### `fry`
+
+```{r}
+datatable(hm_fry_eqtl[[2]])
+```
+
+### APOE 4v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(hm_camera_eqtl[[3]])
+```
+
+#### `fry`
+
+```{r}
+datatable(hm_fry_eqtl[[3]])
+```
+
+### APOE 4v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(hm_camera_eqtl[[4]])
+```
+
+#### `fry`
+
+```{r}
+datatable(hm_fry_eqtl[[4]])
+```
+
+## KEGG {.tabset .tabset-pills}
+
+```{r kg_fry_eqtl}
+kg_fry_eqtl <- colnames(contrasts) %>%
+  sapply(function(cont){
+    biased_genes <- genes_diss[[cont]] %>%
+      as_tibble() %>%
+      dplyr::filter(diss > 0.5) %>%
+      pull(gene_id)
+    cpm(
+      dgeList$counts[!(rownames(dgeList$counts) %in% biased_genes),],
+      log = TRUE
+    ) %>%
+      fry(
+        index = kgByID,
+        design = design,
+        contrast = contrasts[,cont],
+        sort = "mixed"
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+        PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
+        FDR.Mixed = formatC(FDR.Mixed, digits = 1, format = "e"),
+      )
+  }, simplify = FALSE)
+```
+
+```{r kg_camera_eqtl}
+kg_camera_eqtl <- colnames(contrasts) %>%
+  sapply(function(cont){
+    biased_genes <- genes_diss[[cont]] %>%
+      as_tibble() %>%
+      dplyr::filter(diss > 0.5) %>%
+      pull(gene_id)
+    cpm(
+      dgeList$counts[!(rownames(dgeList$counts) %in% biased_genes),],
+      log = TRUE
+    ) %>%
       camera(
         index = kgByID,
-        design = design, 
-        contrast = contrast
-      ) %>% 
-      rownames_to_column("pathway") %>% 
-      as_tibble()
-  })
+        design = design,
+        contrast = contrasts[,cont]
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+      )
+  }, simplify = FALSE)
+```
+
+### APOE 2v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(kg_camera_eqtl[[1]])
+```
+
+#### `fry`
+
+```{r}
+datatable(kg_fry_eqtl[[1]])
+```
+
+### APOE 2v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(kg_camera_eqtl[[2]])
+```
+
+#### `fry`
+
+```{r}
+datatable(kg_fry_eqtl[[2]])
+```
+
+### APOE 4v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(kg_camera_eqtl[[3]])
+```
+
+#### `fry`
+
+```{r}
+datatable(kg_fry_eqtl[[3]])
+```
+
+### APOE 4v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(kg_camera_eqtl[[4]])
+```
+
+#### `fry`
+
+```{r}
+datatable(kg_fry_eqtl[[4]])
+```
+
+## Wikipathways {.tabset .tabset-pills}
+
+```{r wk_fry_eqtl}
+wk_fry_eqtl <- colnames(contrasts) %>%
+  sapply(function(cont){
+    biased_genes <- genes_diss[[cont]] %>%
+      as_tibble() %>%
+      dplyr::filter(diss > 0.5) %>%
+      pull(gene_id)
+    cpm(
+      dgeList$counts[!(rownames(dgeList$counts) %in% biased_genes),],
+      log = TRUE
+    ) %>%
+      fry(
+        index = wkByID,
+        design = design,
+        contrast = contrasts[,cont],
+        sort = "mixed"
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+        PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
+        FDR.Mixed = formatC(FDR.Mixed, digits = 1, format = "e"),
+      )
+  }, simplify = FALSE)
+```
+
+```{r wk_camera_eqtl}
+wk_camera_eqtl <- colnames(contrasts) %>%
+  sapply(function(cont){
+    biased_genes <- genes_diss[[cont]] %>%
+      as_tibble() %>%
+      dplyr::filter(diss > 0.5) %>%
+      pull(gene_id)
+    cpm(
+      dgeList$counts[!(rownames(dgeList$counts) %in% biased_genes),],
+      log = TRUE
+    ) %>%
+      camera(
+        index = wkByID,
+        design = design,
+        contrast = contrasts[,cont]
+      ) %>%
+      rownames_to_column("Pathway") %>%
+      as_tibble() %>%
+      mutate(
+        PValue = formatC(PValue, digits = 1, format = "e"),
+        FDR = formatC(FDR, digits = 1, format = "e"),
+      )
+  }, simplify = FALSE)
+```
+
+### APOE 2v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(wk_camera_eqtl[[1]])
+```
+
+#### `fry`
+
+```{r}
+datatable(wk_fry_eqtl[[1]])
+```
+
+### APOE 2v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(wk_camera_eqtl[[2]])
+```
+
+#### `fry`
+
+```{r}
+datatable(wk_fry_eqtl[[2]])
+```
+
+### APOE 4v3 females {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(wk_camera_eqtl[[3]])
+```
+
+#### `fry`
+
+```{r}
+datatable(wk_fry_eqtl[[3]])
+```
+
+### APOE 4v3 males {.tabset .tabset-pills}
+
+#### `camera`
+
+```{r}
+datatable(wk_camera_eqtl[[4]])
+```
+
+#### `fry`
+
+```{r}
+datatable(wk_fry_eqtl[[4]])
 ```

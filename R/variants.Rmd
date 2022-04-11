@@ -69,7 +69,7 @@ source("~/bioinformatics/bioToolkit/lbFuncs.R")
 ```{r projDir}
 ## Choose either local or remote project directory
 # projDir <- here()
-projDir <- "/hpcfs/users/a1647910/211130_Q96K97del_A603fs"
+projDir <- "/hpcfs/users/a1647910/211001_APOE_Mm"
 ```
 
 ```{r opts}
@@ -269,7 +269,7 @@ allele_diss <- lapply(
       }) %>%
       bind_rows() %>%
       GRanges()
-  } 
+  }
 ) %>%
   set_names(c(
     "APOE2v3_female",
@@ -401,7 +401,7 @@ plot_allele_diss <- function(
   title
 ){
   tracks <- list()
-  
+
   if (length(mutation)) {
     mutation <- mutation %>%
       plyranges::filter(seqnames == chr) %>%
@@ -418,7 +418,7 @@ plot_allele_diss <- function(
     )
     tracks <- append(tracks, mutant_track)
   }
-  
+
   axis_track <- GenomeAxisTrack(
     add53 = TRUE,
     add35 = TRUE,
@@ -432,7 +432,7 @@ plot_allele_diss <- function(
     )
   }
   tracks <- append(tracks, axis_track)
-  
+
   if (length(genes)) {
     genes <- genes %>%
       plyranges::filter(seqnames == chr) %>%
@@ -448,7 +448,7 @@ plot_allele_diss <- function(
     )
     tracks <- append(tracks, gene_track)
   }
-  
+
   diss_track <- diss[,"diss_rollmean"] %>%
     plyranges::filter(seqnames == chr) %>%
     DataTrack(
@@ -478,7 +478,7 @@ plot_allele_diss <- function(
     )
   }
   tracks <- append(tracks, diss_track)
-  
+
   if (length(lfc)) {
     lfc_track <- lfc[,"lfc_rollmean"] %>%
       plyranges::filter(seqnames == chr) %>%
@@ -495,7 +495,7 @@ plot_allele_diss <- function(
       )
     tracks <- append(tracks, lfc_track)
   }
-  
+
   plotTracks(
     trackList = tracks,
     main = title,
@@ -538,9 +538,11 @@ plot_allele_diss(
 )
 ```
 
-Give a summary of window sizes
-enrichment analysis on mouse data etqls vs non eqtls
 Try quasi likelihood for DE testing
 Look at regulatory TFT datasets
+Calculate inter gene correlation
+throw away gene sets with no DE genes
+use metric of dissimilarity as bias input for goseq
+check previours chromosomal enrichment analysis
 
 Circos plot

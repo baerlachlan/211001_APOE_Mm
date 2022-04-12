@@ -284,7 +284,7 @@ allele_diss <- lapply(
 
 #### Elastic window ranges
 
-```{r win_size}
+```{r plot_snv_winSize}
 lapply(seq_along(allele_diss[1:4]), function(ind){
   allele_diss[[ind]] %>%
     as_tibble() %>%
@@ -362,7 +362,7 @@ lfc <- lapply(topDE, function(x){
 
 #### Elastic window ranges
 
-```{r}
+```{r plot_lfc_winSize}
 lapply(seq_along(lfc), function(ind){
   lfc[[ind]] %>%
     as_tibble() %>%

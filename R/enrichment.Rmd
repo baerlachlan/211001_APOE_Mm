@@ -199,6 +199,10 @@ contrasts <- makeContrasts(
 topTables <- readRDS(here("files/topTables_cqn.Rds"))
 ```
 
+```{r deGenes}
+deGenes <- lapply(topTables, dplyr::filter, DE)
+```
+
 ## Variant data
 
 ```{r diss_winRanges}
@@ -273,6 +277,10 @@ wkByID <- wk %>%
 
 # Enrichment testing {.tabset}
 
+```{r}
+corr <- interGeneCorrelation(dgeList$counts, design)
+```
+
 ## Hallmark {.tabset .tabset-pills}
 
 ```{r hm_fry}
@@ -303,7 +311,8 @@ hm_camera <- contrasts %>%
       camera(
         index = hmByID,
         design = design,
-        contrast = contrast
+        contrast = contrast,
+        inter.gene.cor = corr$correlation
       ) %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
@@ -312,6 +321,23 @@ hm_camera <- contrasts %>%
         FDR = formatC(FDR, digits = 1, format = "e"),
       )
   })
+```
+
+```{r goseq_pwf}
+# pwf <- map2(topDE, genes_diss[1:4], function(topTable, geneDiss){
+#   topTable %>%
+#     left_join(as.data.frame(geneDiss)[,c("gene_id", "diss")]) %>%
+#     dplyr::filter(!is.na(diss)) %>%
+#     with(
+#       nullp(
+#         DEgenes = structure(as.integer(DE), names = gene_id),
+#         genome = "danRer11",
+#         id = "ensGene",
+#         bias.data = diss,
+#         plot.fit = TRUE
+#       )
+#     )
+# })
 ```
 
 ### APOE 2v3 females {.tabset .tabset-pills}

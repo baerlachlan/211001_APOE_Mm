@@ -181,7 +181,7 @@ dgeList <- counts %>%
   calcNormFactors()
 ```
 
-```{r}
+```{r save_dgeList}
 dgeList_path <- here("files/dgeList.Rds")
 if (!file.exists(dgeList_path)) {
   saveRDS(dgeList, dgeList_path)

@@ -54,6 +54,7 @@ suppressPackageStartupMessages({
   library(DT)
   library(htmltools)
   library(msigdbr)
+  library(reactable)
 })
 ```
 
@@ -263,23 +264,7 @@ wkByID <- wk %>%
 
 - The Wikipathways gene sets consists of `r length(wkByID)` gene sets ranging from sizes of `r min(sapply(wkByID, length))` to `r max(sapply(wkByID, length))` genes.
 
-```{r chr}
-# chr <- as_tibble(genes)
-# chrByGene <- chr %>%
-#   split(f = .$gene_id) %>%
-#   lapply(extract2, "seqnames")
-# chrByID <- chr %>%
-#   dplyr::filter(seqnames %in% seq(1:25)) %>%
-#   droplevels() %>%
-#   split(f = .$seqnames) %>%
-#   lapply(extract2, "gene_id")
-```
-
 # Enrichment testing {.tabset}
-
-```{r}
-corr <- interGeneCorrelation(dgeList$counts, design)
-```
 
 ## Hallmark {.tabset .tabset-pills}
 
@@ -296,6 +281,7 @@ hm_fry <- contrasts %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
+        Pathway = str_trunc(Pathway, width = 20),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -304,93 +290,25 @@ hm_fry <- contrasts %>%
   })
 ```
 
-```{r hm_camera}
-hm_camera <- contrasts %>%
-  apply(MARGIN = 2, function(contrast){
-    cpm(dgeList$counts, log = TRUE) %>%
-      camera(
-        index = hmByID,
-        design = design,
-        contrast = contrast,
-        inter.gene.cor = corr$correlation
-      ) %>%
-      rownames_to_column("Pathway") %>%
-      as_tibble() %>%
-      mutate(
-        PValue = formatC(PValue, digits = 1, format = "e"),
-        FDR = formatC(FDR, digits = 1, format = "e"),
-      )
-  })
-```
-
-```{r goseq_pwf}
-# pwf <- map2(topDE, genes_diss[1:4], function(topTable, geneDiss){
-#   topTable %>%
-#     left_join(as.data.frame(geneDiss)[,c("gene_id", "diss")]) %>%
-#     dplyr::filter(!is.na(diss)) %>%
-#     with(
-#       nullp(
-#         DEgenes = structure(as.integer(DE), names = gene_id),
-#         genome = "danRer11",
-#         id = "ensGene",
-#         bias.data = diss,
-#         plot.fit = TRUE
-#       )
-#     )
-# })
-```
-
-### APOE 2v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(hm_camera[[1]])
-```
-
-#### `fry`
+### APOE 2v3 females
 
 ```{r}
 datatable(hm_fry[[1]])
 ```
 
-### APOE 2v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(hm_camera[[2]])
-```
-
-#### `fry`
+### APOE 2v3 males
 
 ```{r}
 datatable(hm_fry[[2]])
 ```
 
-### APOE 4v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(hm_camera[[3]])
-```
-
-#### `fry`
+### APOE 4v3 females
 
 ```{r}
 datatable(hm_fry[[3]])
 ```
 
-### APOE 4v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(hm_camera[[4]])
-```
-
-#### `fry`
+### APOE 4v3 males
 
 ```{r}
 datatable(hm_fry[[4]])
@@ -411,6 +329,7 @@ kg_fry <- contrasts %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
+        Pathway = str_trunc(Pathway, width = 20),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -419,75 +338,25 @@ kg_fry <- contrasts %>%
   })
 ```
 
-```{r kg_camera}
-kg_camera <- contrasts %>%
-  apply(MARGIN = 2, function(contrast){
-    cpm(dgeList$counts, log = TRUE) %>%
-      camera(
-        index = kgByID,
-        design = design,
-        contrast = contrast
-      ) %>%
-      rownames_to_column("Pathway") %>%
-      as_tibble() %>%
-      mutate(
-        PValue = formatC(PValue, digits = 1, format = "e"),
-        FDR = formatC(FDR, digits = 1, format = "e"),
-      )
-  })
-```
-
-### APOE 2v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(kg_camera[[1]])
-```
-
-#### `fry`
+### APOE 2v3 females
 
 ```{r}
 datatable(kg_fry[[1]])
 ```
 
-### APOE 2v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(kg_camera[[2]])
-```
-
-#### `fry`
+### APOE 2v3 males
 
 ```{r}
 datatable(kg_fry[[2]])
 ```
 
-### APOE 4v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(kg_camera[[3]])
-```
-
-#### `fry`
+### APOE 4v3 females
 
 ```{r}
 datatable(kg_fry[[3]])
 ```
 
-### APOE 4v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(kg_camera[[4]])
-```
-
-#### `fry`
+### APOE 4v3 males
 
 ```{r}
 datatable(kg_fry[[4]])
@@ -508,6 +377,7 @@ wk_fry <- contrasts %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
+        Pathway = str_trunc(Pathway, width = 20),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -516,75 +386,25 @@ wk_fry <- contrasts %>%
   })
 ```
 
-```{r wk_camera}
-wk_camera <- contrasts %>%
-  apply(MARGIN = 2, function(contrast){
-    cpm(dgeList$counts, log = TRUE) %>%
-      camera(
-        index = wkByID,
-        design = design,
-        contrast = contrast
-      ) %>%
-      rownames_to_column("Pathway") %>%
-      as_tibble() %>%
-      mutate(
-        PValue = formatC(PValue, digits = 1, format = "e"),
-        FDR = formatC(FDR, digits = 1, format = "e"),
-      )
-  })
-```
-
-### APOE 2v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(wk_camera[[1]])
-```
-
-#### `fry`
+### APOE 2v3 females
 
 ```{r}
 datatable(wk_fry[[1]])
 ```
 
-### APOE 2v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(wk_camera[[2]])
-```
-
-#### `fry`
+### APOE 2v3 males
 
 ```{r}
 datatable(wk_fry[[2]])
 ```
 
-### APOE 4v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(wk_camera[[3]])
-```
-
-#### `fry`
+### APOE 4v3 females
 
 ```{r}
 datatable(wk_fry[[3]])
 ```
 
-### APOE 4v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(wk_camera[[4]])
-```
-
-#### `fry`
+### APOE 4v3 males
 
 ```{r}
 datatable(wk_fry[[4]])
@@ -639,6 +459,7 @@ hm_fry_eqtl <- colnames(contrasts) %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
+        Pathway = str_trunc(Pathway, width = 20),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -647,82 +468,25 @@ hm_fry_eqtl <- colnames(contrasts) %>%
   }, simplify = FALSE)
 ```
 
-```{r hm_camera_eqtl}
-hm_camera_eqtl <- colnames(contrasts) %>%
-  sapply(function(cont){
-    biased_genes <- genes_diss[[cont]] %>%
-      as_tibble() %>%
-      dplyr::filter(diss > 0.5) %>%
-      pull(gene_id)
-    cpm(
-      dgeList$counts[!(rownames(dgeList$counts) %in% biased_genes),],
-      log = TRUE
-    ) %>%
-      camera(
-        index = hmByID,
-        design = design,
-        contrast = contrasts[,cont]
-      ) %>%
-      rownames_to_column("Pathway") %>%
-      as_tibble() %>%
-      mutate(
-        PValue = formatC(PValue, digits = 1, format = "e"),
-        FDR = formatC(FDR, digits = 1, format = "e"),
-      )
-  }, simplify = FALSE)
-```
-
-### APOE 2v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(hm_camera_eqtl[[1]])
-```
-
-#### `fry`
+### APOE 2v3 females
 
 ```{r}
 datatable(hm_fry_eqtl[[1]])
 ```
 
-### APOE 2v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(hm_camera_eqtl[[2]])
-```
-
-#### `fry`
+### APOE 2v3 males
 
 ```{r}
 datatable(hm_fry_eqtl[[2]])
 ```
 
-### APOE 4v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(hm_camera_eqtl[[3]])
-```
-
-#### `fry`
+### APOE 4v3 females
 
 ```{r}
 datatable(hm_fry_eqtl[[3]])
 ```
 
-### APOE 4v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(hm_camera_eqtl[[4]])
-```
-
-#### `fry`
+### APOE 4v3 males
 
 ```{r}
 datatable(hm_fry_eqtl[[4]])
@@ -750,6 +514,7 @@ kg_fry_eqtl <- colnames(contrasts) %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
+        Pathway = str_trunc(Pathway, width = 20),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -758,82 +523,25 @@ kg_fry_eqtl <- colnames(contrasts) %>%
   }, simplify = FALSE)
 ```
 
-```{r kg_camera_eqtl}
-kg_camera_eqtl <- colnames(contrasts) %>%
-  sapply(function(cont){
-    biased_genes <- genes_diss[[cont]] %>%
-      as_tibble() %>%
-      dplyr::filter(diss > 0.5) %>%
-      pull(gene_id)
-    cpm(
-      dgeList$counts[!(rownames(dgeList$counts) %in% biased_genes),],
-      log = TRUE
-    ) %>%
-      camera(
-        index = kgByID,
-        design = design,
-        contrast = contrasts[,cont]
-      ) %>%
-      rownames_to_column("Pathway") %>%
-      as_tibble() %>%
-      mutate(
-        PValue = formatC(PValue, digits = 1, format = "e"),
-        FDR = formatC(FDR, digits = 1, format = "e"),
-      )
-  }, simplify = FALSE)
-```
-
-### APOE 2v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(kg_camera_eqtl[[1]])
-```
-
-#### `fry`
+### APOE 2v3 females
 
 ```{r}
 datatable(kg_fry_eqtl[[1]])
 ```
 
-### APOE 2v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(kg_camera_eqtl[[2]])
-```
-
-#### `fry`
+### APOE 2v3 males
 
 ```{r}
 datatable(kg_fry_eqtl[[2]])
 ```
 
-### APOE 4v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(kg_camera_eqtl[[3]])
-```
-
-#### `fry`
+### APOE 4v3 females
 
 ```{r}
 datatable(kg_fry_eqtl[[3]])
 ```
 
-### APOE 4v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(kg_camera_eqtl[[4]])
-```
-
-#### `fry`
+### APOE 4v3 males
 
 ```{r}
 datatable(kg_fry_eqtl[[4]])
@@ -861,6 +569,7 @@ wk_fry_eqtl <- colnames(contrasts) %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
+        Pathway = str_trunc(Pathway, width = 20),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -869,82 +578,25 @@ wk_fry_eqtl <- colnames(contrasts) %>%
   }, simplify = FALSE)
 ```
 
-```{r wk_camera_eqtl}
-wk_camera_eqtl <- colnames(contrasts) %>%
-  sapply(function(cont){
-    biased_genes <- genes_diss[[cont]] %>%
-      as_tibble() %>%
-      dplyr::filter(diss > 0.5) %>%
-      pull(gene_id)
-    cpm(
-      dgeList$counts[!(rownames(dgeList$counts) %in% biased_genes),],
-      log = TRUE
-    ) %>%
-      camera(
-        index = wkByID,
-        design = design,
-        contrast = contrasts[,cont]
-      ) %>%
-      rownames_to_column("Pathway") %>%
-      as_tibble() %>%
-      mutate(
-        PValue = formatC(PValue, digits = 1, format = "e"),
-        FDR = formatC(FDR, digits = 1, format = "e"),
-      )
-  }, simplify = FALSE)
-```
-
-### APOE 2v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(wk_camera_eqtl[[1]])
-```
-
-#### `fry`
+### APOE 2v3 females
 
 ```{r}
 datatable(wk_fry_eqtl[[1]])
 ```
 
-### APOE 2v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(wk_camera_eqtl[[2]])
-```
-
-#### `fry`
+### APOE 2v3 males
 
 ```{r}
 datatable(wk_fry_eqtl[[2]])
 ```
 
-### APOE 4v3 females {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(wk_camera_eqtl[[3]])
-```
-
-#### `fry`
+### APOE 4v3 females
 
 ```{r}
 datatable(wk_fry_eqtl[[3]])
 ```
 
-### APOE 4v3 males {.tabset .tabset-pills}
-
-#### `camera`
-
-```{r}
-datatable(wk_camera_eqtl[[4]])
-```
-
-#### `fry`
+### APOE 4v3 males
 
 ```{r}
 datatable(wk_fry_eqtl[[4]])

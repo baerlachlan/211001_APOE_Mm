@@ -281,7 +281,7 @@ hm_fry <- contrasts %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
-        Pathway = str_trunc(Pathway, width = 20),
+        Pathway = str_trunc(Pathway, width = 18),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -329,7 +329,7 @@ kg_fry <- contrasts %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
-        Pathway = str_trunc(Pathway, width = 20),
+        Pathway = str_trunc(Pathway, width = 18),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -377,7 +377,7 @@ wk_fry <- contrasts %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
-        Pathway = str_trunc(Pathway, width = 20),
+        Pathway = str_trunc(Pathway, width = 18),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -459,7 +459,7 @@ hm_fry_eqtl <- colnames(contrasts) %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
-        Pathway = str_trunc(Pathway, width = 20),
+        Pathway = str_trunc(Pathway, width = 18),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -514,7 +514,7 @@ kg_fry_eqtl <- colnames(contrasts) %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
-        Pathway = str_trunc(Pathway, width = 20),
+        Pathway = str_trunc(Pathway, width = 18),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),
@@ -569,7 +569,7 @@ wk_fry_eqtl <- colnames(contrasts) %>%
       rownames_to_column("Pathway") %>%
       as_tibble() %>%
       mutate(
-        Pathway = str_trunc(Pathway, width = 20),
+        Pathway = str_trunc(Pathway, width = 18),
         PValue = formatC(PValue, digits = 1, format = "e"),
         FDR = formatC(FDR, digits = 1, format = "e"),
         PValue.Mixed = formatC(PValue.Mixed, digits = 1, format = "e"),

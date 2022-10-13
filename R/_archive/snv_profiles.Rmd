@@ -1,0 +1,626 @@
+---
+title: "SNV profile similarity exploration"
+subtitle: "211001_APOE_Mm"
+author: "Lachlan Baer"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    fig_width: 8
+    fig_height: 6
+    fig_align: "center"
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  error = FALSE, 
+  fig.align = "center"
+)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+# Introduction
+
+# Setup 
+
+```{r packages}
+suppressPackageStartupMessages({
+  ## Common
+  library(tidyverse)
+  library(magrittr)
+  library(here)
+  library(AnnotationHub)
+  library(purrr)
+  library(scales)
+  library(kableExtra)
+  library(tictoc)
+  library(ggrepel)
+  library(RColorBrewer)
+  library(ggpubr)
+  library(pander)
+  library(rmarkdown)
+  ## Project specific
+  library(VariantAnnotation)
+  library(plyranges)
+})
+```
+
+```{r commonOpts}
+if (interactive()) setwd(here::here())
+theme_set(theme_bw())
+```
+
+## EnsDb
+
+```{r ensParams}
+ens_species <- "Mus musculus"
+ens_release <- "104"
+```
+
+```{r ensDb}
+ah <- AnnotationHub() %>%
+  subset(species == ens_species) %>%
+  subset(rdataclass == "EnsDb")
+ahId <- ah$ah_id[str_detect(ah$title, ens_release)]
+ensDb <- ah[[ahId]]
+```
+
+An `EnsDb` object for Ensembl release 101 was setup for extracting gene and exon annotation information.
+
+## Genome metadata
+
+```{r}
+if (ens_species == "Mus musculus") {
+  primary_chrs <- c(seq(1:19), "X", "Y")
+} else if (ens_species == "Danio rerio") {
+  primary_chrs <- c(seq(1:25))
+} else if (ens_species == "Homo sapiens") {
+  primary_chrs <- c(seq(1:22), "X", "Y")
+}
+```
+
+```{r ensFeatures}
+genes <- genes(ensDb)
+mcols(genes) <- mcols(genes)[
+  c("gene_id", "gene_name", "gene_biotype", "entrezid")
+]
+exons <- exonsBy(ensDb, by = "gene")
+```
+
+```{r chrLengths}
+chrLengths <- seqlengths(ensDb) %>%
+  .[primary_chrs]
+```
+
+## Sample metadata
+
+```{r}
+meta <- read_tsv(here("misc/SYNAPSE_METADATA_MANIFEST.tsv")) %>%
+  left_join(read_csv(here("misc/metaAPOE.csv"))) %>%
+  dplyr::select(
+    sampleID = specimenID, species, genotypeBackground, litter, dateBirth,
+    dateDeath, genotype = Genotype, sex = Sex, age = Age, lane, basename = name,
+    modelSystemName, individualID, study
+  ) %>%
+  dplyr::filter(str_detect(sampleID, "_3M_")) %>%
+  mutate(basename = str_remove(basename, ".bam_R(1|2).fastq.gz")) %>%
+  distinct(sampleID, .keep_all = TRUE) %>%
+  dplyr::arrange(genotype, sampleID)
+```
+
+```{r}
+genoCols <- meta$genotype %>%
+  unique() %>%
+  length() %>%
+  brewer.pal("Set1") %>%
+  setNames(unique(meta$genotype))
+```
+
+# SNV profiles
+
+```{r}
+snvProfile <- function(vcf, minDepth = 10){
+  svp <- ScanVcfParam(info = "END", geno = c("DP", "AD", "GT", "GQ"))
+  profile <- suppressWarnings({
+    readVcfAsVRanges(vcf, param = svp)
+  }) %>%
+    .[totalDepth(.) >= minDepth,]
+  mcols(profile) <- mcols(profile) %>%
+    as.data.frame() %>%
+    separate(
+      col = "GT", sep = "/", into = c("allele_1", "allele_2"), fill = "right",
+      remove = TRUE
+    ) %>%
+    mutate(
+      ref = ref(profile),
+      alt = alt(profile),
+      allele_1 = ifelse(allele_1 == 0, ref, alt),
+      allele_2 = ifelse(allele_2 == 0, ref, alt),
+      genotype = paste0(allele_1, ":", allele_2)
+    ) %>%
+    dplyr::select(QUAL, allele_1, allele_2, genotype)
+  return(profile)
+}
+```
+
+```{r}
+files <- list.files(
+  "/hpcfs/users/a1647910/211001_APOE_Mm_ASE/07_variants/4_selected",
+  pattern = ".vcf.gz$",
+  full.names = TRUE
+)
+```
+
+```{r}
+profiles <- lapply(files, snvProfile)
+```
+
+```{r}
+compareProfiles <- function(prof_1, prof_2, chromosome = NULL){
+  if (!is.null(chromosome)) {
+    prof_1 <- plyranges::filter(prof_1, seqnames == chromosome)
+    prof_2 <- plyranges::filter(prof_2, seqnames == chromosome)
+  }
+  overlaps <- findOverlaps(prof_1, prof_2)
+  prof_1 <- prof_1[queryHits(overlaps)]
+  prof_2 <- prof_2[subjectHits(overlaps)]
+  sample_1 <- unique(sampleNames(prof_1))
+  sample_2 <- unique(sampleNames(prof_2))
+  common <- GRanges(
+    seqnames = seqnames(prof_1),
+    ranges = ranges(prof_1),
+    strand = strand(prof_1)
+  )
+  mcols(common)$sample_1 <- sampleNames(prof_1)
+  mcols(common)$sample_2 <- sampleNames(prof_2)
+  mcols(common)$allele_1.sample_1 <- mcols(prof_1)$allele_1
+  mcols(common)$allele_1.sample_2 <- mcols(prof_2)$allele_1
+  mcols(common)$allele_2.sample_1 <- mcols(prof_1)$allele_2
+  mcols(common)$allele_2.sample_2 <- mcols(prof_2)$allele_2
+  mcols(common)$genotype.sample_1 <- mcols(prof_1)$genotype
+  mcols(common)$genotype.sample_2 <- mcols(prof_2)$genotype
+  mcols(common)$matches_1 <- 
+    mcols(common)$allele_1.sample_1 == mcols(common)$allele_1.sample_2
+  mcols(common)$matches_2 <- 
+    mcols(common)$allele_2.sample_1 == mcols(common)$allele_2.sample_2
+  mcols(common)$matches_sum <-
+    mcols(common)$matches_1 + mcols(common)$matches_2
+  return(common)
+}
+```
+
+```{r}
+comparisons <- sapply(profiles, function(prof_1){
+  sapply(profiles, function(prof_2){
+    compareProfiles(prof_1, prof_2)
+  }, simplify = FALSE)
+}, simplify = FALSE) %>%
+  unlist() %>%
+  GRangesList(compress = FALSE)
+```
+
+```{r}
+alleleSimilarity <- function(comparison){
+  tibble(
+    sample_1 = unique(mcols(comparison)$sample_1),
+    sample_2 = unique(mcols(comparison)$sample_2),
+    allele_matches = sum(mcols(comparison)$matches_sum),
+    alleles_total = length(comparison) * 2
+  ) %>%
+    mutate(
+      # similarity = (allele_matches + 1) / (alleles_total + 5)
+      similarity = allele_matches / alleles_total
+    )
+}
+```
+
+```{r}
+similarities <- lapply(comparisons, alleleSimilarity) %>%
+  bind_rows()
+```
+
+```{r}
+similarities_mat <- similarities %>%
+  dplyr::select(-allele_matches, -alleles_total) %>%
+  pivot_wider(names_from = "sample_2", values_from = "similarity") %>%
+  as.data.frame() %>%
+  column_to_rownames("sample_1") %>%
+  as.matrix() %>%
+  .[meta$basename, meta$basename]
+similarities_mat[upper.tri(similarities_mat)] <- NA
+# similarities_mat[lower.tri(similarities_mat)] <- NA
+```
+
+```{r}
+library(pheatmap)
+pheatmap(
+  similarities_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  gaps_row = c(16, 32),
+  gaps_col = c(16, 32),
+  annotation_row = column_to_rownames(meta, "basename") %>%
+    dplyr::select(genotype),
+  annotation_col = column_to_rownames(meta, "basename") %>%
+    dplyr::select(genotype),
+  annotation_colors = list(genotype = genoCols),
+  na_col = "white",
+  border_color = NA,
+  color = colorRampPalette(c("grey70", "navy"))(200),
+  # breaks = c(0, 0.5, 0.9, 1)
+)
+```
+
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+Heatmap(
+  similarities_mat,
+  cluster_rows = TRUE,
+  cluster_columns = TRUE,
+  na_col = "white",
+  left_annotation = rowAnnotation(
+    genotype = meta$genotype,
+    col = list(genotype = genoCols)
+  ),
+  bottom_annotation = columnAnnotation(
+    genotype = meta$genotype,
+    col = list(genotype = genoCols)
+  ),
+  # row_split = meta$genotype,
+  # column_split = meta$genotype,
+  column_title = NULL,
+  row_title = NULL,
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  name = "Similarity",  # Names colour legend
+  col = colorRamp2(
+    breaks = c(0, 0.5, 0.98, 1),
+    colors = c("white", "white", "grey", "navy")
+  )
+)
+```
+
+```{r}
+seqcat_1 <- create_profile(file_1, sample = "APOE_3M_1.FCHJKY5BBXX_L1_IATCACG", filter_gd = FALSE, filter_vc = FALSE, filter_mt = FALSE, filter_ns = FALSE, filter_pd = FALSE, min_depth = 10)
+seqcat_2 <- create_profile(file_2, sample = "APOE_3M_2.FCHJKY5BBXX_L1_ITTAGGC", filter_gd = FALSE, filter_vc = FALSE, filter_mt = FALSE, filter_ns = FALSE, filter_pd = FALSE)
+debugonce(compare_profiles)
+compare_profiles(seqcat_1, seqcat_2)
+```
+
+```{r}
+debugonce(create_profile)
+create_profile(file_1, sample = "APOE_3M_1.FCHJKY5BBXX_L1_IATCACG", filter_gd = FALSE)
+```
+
+```{r}
+debugonce(compare_many)
+compare_many(list(seqcat_1, seqcat_2)) %>%
+  .[[1]]
+```
+
+```{r}
+function (data, similarity = NULL, a = 1, b = 5) 
+{
+  if (!is.null(similarity)) {
+    if (!methods::is(similarity, "data.frame")) {
+      stop("supplied similarity object is not a dataframe")
+    }
+    correct_names <- c("sample_1", "sample_2", "variants_1", 
+                       "variants_2", "overlaps", "matches", "concordance", 
+                       "similarity_score")
+    if (!identical(names(similarity), correct_names)) {
+      stop("supplied similarity dataframe does not have the ", 
+           "correct structure")
+    }
+  }
+  sample_1 <- unique(data$sample_1)
+  sample_2 <- unique(data$sample_2)
+  n_total <- nrow(data[data$match == "match" | data$match == 
+                         "mismatch", ])
+  n_matches <- nrow(data[data$match == "match", ])
+  n_sample_1 <- nrow(data) - nrow(data[data$match == paste0(sample_2, 
+                                                            "_only"), ])
+  n_sample_2 <- nrow(data) - nrow(data[data$match == paste0(sample_1, 
+                                                            "_only"), ])
+  concordance <- round(n_matches/n_total * 100, 1)
+  score <- round((n_matches + a)/(n_total + a + b) * 100, 
+                 1)
+  results <- data.frame(sample_1 = sample_1, sample_2 = sample_2, 
+                        variants_1 = n_sample_1, variants_2 = n_sample_2, overlaps = n_total, 
+                        matches = n_matches, concordance = concordance, similarity_score = score, 
+                        stringsAsFactors = FALSE)
+  if (!is.null(similarity)) {
+    results <- rbind(similarity, results)
+  }
+  return(results)
+}
+```
+
+```{r}
+files <- list.files("/hpcfs/users/a1647910/211001_APOE_Mm_ASE/07_variants/1_called", pattern = ".vcf.gz$", full.names = TRUE)
+samples <- basename(files) %>%
+  str_remove(".vcf.gz$")
+map <- tibble(samples, files) 
+write_tsv(map, "/hpcfs/users/a1647910/211001_APOE_Mm_ASE/misc/cohort.sample_map", col_names = FALSE)
+```
+
+# Tmp
+
+```{r}
+vcf <- "/hpcfs/users/a1647910/211001_APOE_Mm_ASE/07_variants/6_select/output.vcf.gz"
+svp <- ScanVcfParam(info = "END", geno = c("DP", "AD", "GT", "GQ"))
+vr <- readVcfAsVRanges(vcf, param = svp)
+```
+
+```{r}
+vrList <- split(vr, sampleNames(vr))
+lapply(vrList, function(x){
+  plyranges::filter(x, GT != "./.") %>%
+    plyranges::group_by()
+})
+```
+
+```{r}
+vrList[[1]] %>%
+  plyranges::filter(GT != "./.") %>%
+  plyranges::filter(GQ > 20) %>%
+  plyranges::filter(totalDepth > 10) %>%
+  plyranges::mutate(
+    ref = ref(.),
+    alt = alt(.),
+    sample = sampleNames(.)
+  ) %>%
+  plyranges::group_by(seqnames, start, end, GT) %>%
+  mutate(
+    alt = paste(alt, collapse = ","),
+    # genotype = unique(paste(GT))
+  )
+```
+
+```{r}
+tmp <- readVcf(vcf)
+alt(tmp) %>% CharacterList() %>% unstrsplit(sep = ",")
+```
+
+```{r}
+vcf_path <- "/hpcfs/users/a1647910/211001_APOE_Mm_ASE/07_variants/6_select/output.vcf.gz"
+svp <- ScanVcfParam(info = "", geno = c("GT", "GQ", "DP"))
+vcf <- suppressWarnings({
+  # readVcf(vcf_path, param = svp)
+  readVcf(vcf_path)
+})
+samples <- samples(header(vcf))
+gr <- rowRanges(vcf)[,c("REF", "ALT")]
+gr$ALT <- CharacterList(gr$ALT) %>%
+  unstrsplit(sep = ",")
+gr$REF <- as.character(gr$REF)
+gr$ALL <- paste(gr$REF, gr$ALT, sep = ",")
+```
+
+```{r}
+sampleGr <- gr
+sampleGr$sample <- sample
+sampleGr$GQ <- geno(vcf)$GQ[,sample]
+sampleGr$DP <- geno(vcf)$DP[,sample]
+sampleGr$GT <- geno(vcf)$GT[,sample] %>%
+  str_replace(., "\\|", "\\/")  # We are not concerned with phasing
+sampleGr <- sampleGr %>%
+  plyranges::filter(GQ >= 20 & DP >= 10) %>%
+  as.data.frame() %>%
+  separate(
+    col = "GT", into = c("allele_1", "allele_2"), sep = "/",
+    remove = FALSE, convert = TRUE, fill = "right"
+  ) %>%
+  GRanges()
+sampleGr$allele_1 <- map2(sampleGr$ALL, sampleGr$allele_1, function(x, y){
+  unlist(str_split(x, ","))[y + 1]
+}) %>%
+  unlist()
+sampleGr$allele_2 <- map2(sampleGr$ALL, sampleGr$allele_2, function(x, y){
+  unlist(str_split(x, ","))[y + 1]
+}) %>%
+  unlist()
+sampleGr$genotype <- paste(sampleGr$allele_1, sampleGr$allele_2, sep = ":")
+```
+
+```{r}
+create_profiles <- function(vcf_path, min_GQ = 20, min_DP = 10){
+  svp <- ScanVcfParam(info = "", geno = c("GT", "GQ", "DP"))
+  vcf <- suppressWarnings({
+    readVcf(vcf_path, param = svp)
+  })
+  samples <- samples(header(vcf))
+  gr <- rowRanges(vcf)[,c("REF", "ALT")]
+  gr$ALT <- CharacterList(gr$ALT) %>%
+    unstrsplit(sep = ",")
+  gr$REF <- as.character(gr$REF)
+  gr$ALL <- paste(gr$REF, gr$ALT, sep = ",")
+  sapply(samples, function(sample){
+    sampleGr <- gr
+    sampleGr$sample <- sample
+    sampleGr$GQ <- geno(vcf)$GQ[,sample]
+    sampleGr$DP <- geno(vcf)$DP[,sample]
+    sampleGr$GT <- geno(vcf)$GT[,sample] %>%
+      str_replace(., "\\|", "\\/")  # We are not concerned with phasing
+    sampleGr <- sampleGr %>%
+      plyranges::filter(GQ >= 20 & DP >= 10) %>%
+      as.data.frame() %>%
+      separate(
+        col = "GT", into = c("allele_1", "allele_2"), sep = "/",
+        remove = FALSE, convert = TRUE, fill = "right"
+      ) %>%
+      GRanges()
+    sampleGr$allele_1 <- map2(sampleGr$ALL, sampleGr$allele_1, function(x, y){
+      unlist(str_split(x, ","))[y + 1]
+    }) %>%
+      unlist()
+    sampleGr$allele_2 <- map2(sampleGr$ALL, sampleGr$allele_2, function(x, y){
+      unlist(str_split(x, ","))[y + 1]
+    }) %>%
+      unlist()
+    sampleGr$genotype <- paste(sampleGr$allele_1, sampleGr$allele_2, sep = ":")
+    sampleGr
+  }, simplify = FALSE)
+}
+```
+
+```{r}
+compareProfiles <- function(prof_1, prof_2, chromosome = NULL){
+  if (!is.null(chromosome)) {
+    prof_1 <- plyranges::filter(prof_1, seqnames == chromosome)
+    prof_2 <- plyranges::filter(prof_2, seqnames == chromosome)
+  }
+  overlaps <- findOverlaps(prof_1, prof_2)
+  prof_1 <- prof_1[queryHits(overlaps)]
+  prof_2 <- prof_2[subjectHits(overlaps)]
+  # sample_1 <- unique(sampleNames(prof_1))
+  # sample_2 <- unique(sampleNames(prof_2))
+  common <- GRanges(
+    seqnames = seqnames(prof_1),
+    ranges = ranges(prof_1),
+    strand = strand(prof_1)
+  )
+  mcols(common)$sample_1 <- prof_1$sample
+  mcols(common)$sample_2 <- prof_2$sample
+  mcols(common)$allele_1.sample_1 <- mcols(prof_1)$allele_1
+  mcols(common)$allele_1.sample_2 <- mcols(prof_2)$allele_1
+  mcols(common)$allele_2.sample_1 <- mcols(prof_1)$allele_2
+  mcols(common)$allele_2.sample_2 <- mcols(prof_2)$allele_2
+  mcols(common)$genotype.sample_1 <- mcols(prof_1)$genotype
+  mcols(common)$genotype.sample_2 <- mcols(prof_2)$genotype
+  mcols(common)$matches_1 <- 
+    mcols(common)$allele_1.sample_1 == mcols(common)$allele_1.sample_2
+  mcols(common)$matches_2 <- 
+    mcols(common)$allele_2.sample_1 == mcols(common)$allele_2.sample_2
+  mcols(common)$matches_sum <-
+    mcols(common)$matches_1 + mcols(common)$matches_2
+  return(common)
+}
+```
+
+```{r}
+profiles <- create_profiles(vcf_path = vcf_path)
+```
+
+```{r}
+comparisons <- sapply(profiles, function(prof_1){
+  sapply(profiles, function(prof_2){
+    compareProfiles(prof_1, prof_2)
+  }, simplify = FALSE)
+}, simplify = FALSE) %>%
+  unlist() %>%
+  GRangesList(compress = FALSE)
+```
+
+```{r}
+alleleSimilarity <- function(comparison, chromosome = NULL){
+  if (!is.null(chromosome)) {
+    comparison <- plyranges::filter(comparison, seqnames == chromosome)
+  }
+  tibble(
+    sample_1 = unique(mcols(comparison)$sample_1),
+    sample_2 = unique(mcols(comparison)$sample_2),
+    allele_matches = sum(mcols(comparison)$matches_sum),
+    alleles_total = length(comparison) * 2
+  ) %>%
+    mutate(
+      similarity = (allele_matches + 1) / (alleles_total + 5)
+      # similarity = allele_matches / alleles_total
+    )
+}
+```
+
+```{r}
+similarities <- lapply(comparisons, alleleSimilarity, "17") %>%
+  bind_rows()
+```
+
+```{r}
+similarities_mat <- similarities %>%
+  dplyr::select(-allele_matches, -alleles_total) %>%
+  pivot_wider(names_from = "sample_2", values_from = "similarity") %>%
+  as.data.frame() %>%
+  column_to_rownames("sample_1") %>%
+  as.matrix() %>%
+  .[meta$basename, meta$basename]
+similarities_mat[upper.tri(similarities_mat)] <- NA
+# similarities_mat[lower.tri(similarities_mat)] <- NA
+```
+
+```{r}
+# library(pheatmap)
+# pheatmap(
+#   similarities_mat,
+#   cluster_rows = FALSE,
+#   cluster_cols = FALSE,
+#   gaps_row = c(16, 32),
+#   gaps_col = c(16, 32),
+#   annotation_row = column_to_rownames(meta, "basename") %>%
+#     dplyr::select(genotype),
+#   annotation_col = column_to_rownames(meta, "basename") %>%
+#     dplyr::select(genotype),
+#   annotation_colors = list(genotype = genoCols),
+#   na_col = "white",
+#   border_color = NA,
+#   color = colorRampPalette(c("grey70", "navy"))(200),
+#   # breaks = c(0, 0.5, 0.9, 1)
+# )
+```
+
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+Heatmap(
+  similarities_mat,
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  na_col = "white",
+  left_annotation = rowAnnotation(
+    genotype = meta$genotype,
+    col = list(genotype = genoCols)
+  ),
+  bottom_annotation = columnAnnotation(
+    genotype = meta$genotype,
+    col = list(genotype = genoCols)
+  ),
+  row_split = meta$genotype,
+  column_split = meta$genotype,
+  column_title = NULL,
+  row_title = NULL,
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  name = "Similarity",  # Names colour legend
+  col = colorRamp2(
+    breaks = c(0, 0.20, 0.40, 1),
+    colors = c("white", "white", "grey", "navy")
+  )
+)
+```
+
+```{r}
+files <- list.files("/hpcfs/")
+```
+
+```{r}
+basenames <- list.files(
+  "/hpcfs/users/a1647910/210408_psen1_fADfAI_snv/00_rawData/fastq/",
+  pattern = "R(1|2)"
+  ) %>%
+  str_remove("_R(1|2).fastq.gz") %>%
+  unique()
+samples <- basenames %>%
+  str_remove("_L00(1|2)")
+tibble(basename = basenames, sample = samples, read_group = basenames) %>%
+  write_tsv("/hpcfs/users/a1647910/psen1_rerun/smk/data/samples.tsv")
+```
+

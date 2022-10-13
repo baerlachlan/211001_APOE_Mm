@@ -147,6 +147,10 @@ samples_byGroup <- metadata %>%
 
 # DE data
 
+```{r}
+dgeList <- readRDS(here("files/dgeList.Rds"))
+```
+
 ```{r deData}
 topDE <- readRDS(here("files/topTables_cqn.Rds")) %>%
   sapply(function(x){
@@ -218,7 +222,7 @@ lfc <- lapply(topDE, function(x){
 })
 ```
 
-### Elastic window ranges
+### Elastic window sizes
 
 ```{r plot_lfc_winSize}
 lapply(seq_along(lfc), function(ind){
@@ -307,6 +311,8 @@ allele_props <- lapply(allele_stats, function(stats){
 
 ```{r allele_dist}
 dist_winSize <- 11
+allele_dist_path <- here("files", "allele_dist.Rds")
+if (!file.exists(allele_dist_path)) {
 allele_dist <- lapply(
   list(
     allele_props[c("APOE2_3M_female", "APOE3_3M_female")],
@@ -350,9 +356,48 @@ allele_dist <- lapply(
     "APOE4v3_female",
     "APOE4v3_male"
   ))
+  saveRDS(allele_dist, allele_dist_path)
+} else {
+  allele_dist <- readRDS(allele_dist_path)
+}
 ```
 
-### Elastic window ranges
+### DAR distribution
+
+```{r}
+lapply(seq_along(allele_dist), function(ind){
+  allele_dist[[ind]] %>%
+    split(seqnames(.)) %>%
+    lapply(function(chr){
+      tibble(
+        chromosome = as.vector(seqnames(chr)),
+        div = chr$diversity
+      )
+    }) %>%
+    purrr::reduce(rbind) %>%
+    mutate(
+      chromosome = factor(
+        chromosome,
+        # Draw mutant chr on top
+        levels = unique(c(
+          chromosome[chromosome != "7"],
+          chromosome[chromosome == "7"]
+        ))
+      ),
+      mutant_chromosome = chromosome == "7"
+    ) %>%
+    ggplot(aes(x = div, group = chromosome, colour = mutant_chromosome)) +
+    stat_ecdf() +
+    scale_colour_manual(values = c("grey50", "red")) +
+    labs(
+      title = names(allele_dist[ind]),
+      x = "DAR",
+      y = "F(DAR)"
+    )
+})
+```
+
+### Elastic window sizes
 
 ```{r plot_dist_winSize}
 lapply(seq_along(allele_dist), function(ind){
@@ -392,6 +437,18 @@ dist_winRanges <- lapply(allele_dist, function(x){
       seqnames, start = win_start, end = win_end, width = win_size, strand,
       dist_rollmean, diversity
     ) %>%
+    split(f = .$seqnames) %>%
+    ## Extend the start and ends so that the whole chromosome is covered
+    lapply(function(chr){
+      seqname <- unique(chr$seqnames)
+      chr$start[1] <- 1
+      chr$width[1] <- chr$end[1] - chr$start[1]
+      last_ind <- nrow(chr)
+      chr$end[last_ind] <- chrInfo$length[chrInfo$name == seqname]
+      chr$width[last_ind] <- chr$end[last_ind] - chr$start[last_ind]
+      chr
+    }) %>%
+    bind_rows() %>%
     GRanges()
 })
 ```
@@ -400,6 +457,32 @@ dist_winRanges <- lapply(allele_dist, function(x){
 dist_winRanges_path <- file.path(here(), "files", "dist_winRanges.Rds")
 if (!file.exists(dist_winRanges_path)) {
   saveRDS(dist_winRanges, dist_winRanges_path)
+}
+```
+
+### masterGR
+
+```{r masterGR}
+## Takes ~5 mins to run so .Rds saved for convenience
+## Note a few genes are lost that do not fall within a diversity range
+masterGR_path <- here("files/masterGR.Rds")
+if (!file.exists(masterGR_path)) {
+  masterGR <- map2(dist_winRanges, topDE, function(winRanges, tt){
+    overlaps <- findOverlaps(GRanges(dgeList$genes), winRanges)
+    lapply(unique(queryHits(overlaps)), function(query){
+      subjects <- subjectHits(overlaps)[queryHits(overlaps) == query]
+      diversity <- winRanges$diversity[subjects] %>%
+        mean()
+      dgeList$genes[query,] %>%
+        mutate(diversity = diversity)
+    }) %>%
+      bind_rows() %>%
+      left_join(tt[,c("gene_id", "logFC", "PValue", "FDR", "DE")]) %>%
+      GRanges()
+  })
+  saveRDS(masterGR, masterGR_path)
+} else {
+  masterGR <- readRDS(masterGR_path)
 }
 ```
 

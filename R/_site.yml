@@ -1,0 +1,22 @@
+name: "211001_APOE_Mm"
+output_dir: ../docs
+exclude: ["*de_pub.html"]
+navbar:
+  title: "211001_APOE_Mm"
+  left:
+    - text: Home
+      href: index.html
+    - text: DE
+      href: de.html
+    - text: Variants
+      href: variants.html
+    - text: Enrichment
+      href: enrichment.html
+  right:
+    - icon: fa-github
+      href: https://github.com/baerlachlan/211001_APOE_Mm
+output:
+  html_document:
+    theme: flatly
+    highlight: textmate
+    css: styles.css

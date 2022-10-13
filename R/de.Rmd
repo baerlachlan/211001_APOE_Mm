@@ -1,5 +1,6 @@
 ---
 title: "Differential Gene Expression Analysis"
+subtitle: "211001_APOE_Mm dataset"
 author: "Lachlan Baer"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -45,7 +46,6 @@ suppressPackageStartupMessages({
   library(ggpubr)
   library(pander)
   library(rmarkdown)
-  library(gtools)
   ## Project specific
   library(edgeR)
   library(fgsea)
@@ -53,6 +53,7 @@ suppressPackageStartupMessages({
   library(cqn)
   library(DT)
   library(htmltools)
+  library(gtools)
 })
 ```
 
@@ -301,7 +302,7 @@ Here the null hypothesis, $H_0$, is testing that the true values of the coeffici
 Due to the subtle effects of the mutation outlined in the PCA, genes were considered to be DE if they had an FDR-adjusted p-value < 0.05, as opposed to more stringent error rate controls such as the Bonferroni method.
 
 ```{r}
-alpha <- 0.05
+alpha <- 0.15
 minLfc <- 1
 fit <- estimateDisp(dgeList, design) %>%
   glmFit()
@@ -507,7 +508,7 @@ The x-axis of the PCA plot appears to be flipped, but this normal as the signs o
 After incorporation of the offset values into the `DGEList` object, dispersion estimates were calculated and models were fitted as done pre CQN.
 
 ```{r}
-alpha <- 0.05
+alpha <- 0.15
 minLfc <- 1
 fit_cqn <- estimateDisp(dgeList, design) %>%
   glmFit()
@@ -729,231 +730,3 @@ saveRDS(topTables_cqn, here("files/topTables_cqn.Rds"))
 sessionInfo() %>%
   pander()
 ```
-
-# eQTL bias removal
-
-```{r dist_winRanges}
-dist_winRanges <- readRDS(here("files/dist_winRanges.Rds"))
-```
-
-```{r genes_diversity}
-## Takes ~5 mins to run so .Rds saved for convenience
-## Note a few genes are lost that do not fall within a diversity range
-genes_diversity_path <- here("files/genes_diversity.Rds")
-if (!file.exists(genes_diversity_path)) {
-  genes_diversity <- lapply(dist_winRanges, function(winRanges){
-    overlaps <- findOverlaps(GRanges(dgeList$genes), winRanges)
-    lapply(unique(queryHits(overlaps)), function(query){
-      subjects <- subjectHits(overlaps)[queryHits(overlaps) == query]
-      diversity <- winRanges$diversity[subjects] %>%
-        mean()
-      dgeList$genes[query,] %>%
-        mutate(diversity = diversity)
-    }) %>%
-      bind_rows() %>%
-      GRanges()
-  })
-  saveRDS(genes_diversity, genes_diversity_path)
-} else {
-  genes_diversity <- readRDS(genes_diversity_path)
-}
-```
-
-## Threshold filtering
-
-```{r}
-thresholds <- seq(0.1, 1.0, 0.1)
-```
-
-```{r}
-genes_thresh <- lapply(genes_diversity, function(genes){
-  lapply(thresholds, function(threshVal){
-    genes %>%
-      as_tibble() %>%
-      dplyr::filter(diversity <= threshVal) %>%
-      dplyr::mutate(threshold = threshVal)
-  })
-})
-```
-
-```{r}
-lapply(seq_along(genes_thresh), function(ind){
-  genes_thresh[ind] %>%
-    bind_rows() %>%
-    group_by(threshold) %>%
-    summarise(nGenes = n()) %>%
-    mutate(group = names(genes_thresh[ind]))
-}) %>%
-  bind_rows() %>%
-  ggplot(aes(threshold, nGenes)) +
-  geom_bar(stat = "identity", colour = "black", fill = "grey50") +
-  geom_text(aes(threshold, nGenes, label = nGenes), nudge_y = 500) +
-  scale_x_continuous(breaks = seq(0, 1, 0.1)) +
-  labs(x = "Diversity threshold", y = "Genes") +
-  facet_wrap(~group)
-```
-
-```{r}
-topTables_thresh <- lapply(names(genes_diversity), function(contrast){
-  lapply(thresholds, function(threshVal){
-    genes_passed <- genes_diversity[[contrast]]$gene_id[
-      genes_diversity[[contrast]]$diversity <= threshVal
-    ]
-    fit <- dgeList[genes_passed,] %>%
-      calcNormFactors() %>%
-      estimateDisp(design) %>%
-      glmFit()
-    glmLRT(fit, contrast = contrasts[,contrast]) %>%
-      topTags(n = Inf) %>%
-      .[["table"]] %>%
-      as_tibble() %>%
-      arrange(PValue) %>%
-      dplyr::select(
-        gene_id, gene_name, logFC, logCPM, PValue, FDR, everything()
-      ) %>%
-      mutate(
-        contrast = contrast,
-        threshVal = threshVal,
-        bonfP = p.adjust(PValue, "bonf"),
-        DE = case_when(
-          bonfP < alpha ~ TRUE,
-          FDR < alpha & abs(logFC) > minLfc ~ TRUE
-        ),
-        DE = ifelse(is.na(DE), FALSE, DE)
-      )
-  })
-})
-```
-
-# Publication plots
-
-```{r}
-tt <- topTables_chosen$APOE2v3_male
-man <- tt %>%
-  mutate(mid = (start + end) / 2) %>%
-  dplyr::select(gene_id, gene_name, chromosome, mid, FDR) %>%
-  dplyr::filter(!(chromosome %in% c("X", "Y", "MT"))) %>%
-  group_by(chromosome) %>%
-  summarise(chrLen = max(mid)) %>%
-  mutate(chrSt = cumsum(chrLen)-chrLen) %>%
-  dplyr::select(-chrLen) %>% 
-  left_join(tt) %>%
-  mutate(mid = (start + end) / 2) %>%
-  mutate(midCum = chrSt + mid) %>%
-  mutate(
-    colour = ifelse(chromosome %in% primary_chrs[c(TRUE, FALSE)], "a", "b"),
-    colour = ifelse(chromosome == "7", "c", colour)
-  )
-axis <- man %>%
-  group_by(chromosome) %>%
-  summarise(center = (max(midCum) + min(midCum)) / 2)
-a <- ggplot(man, aes(x = midCum, y = -log10(PValue))) +
-  geom_point(
-    data = man %>%
-      dplyr::filter(!DE),
-    aes(colour = colour),
-    shape = 20,
-    alpha = 1,
-    size = 1
-  ) +
-  scale_colour_manual(values = c("grey50", "grey80", "red")) +
-  geom_point(
-    data = man %>%
-      dplyr::filter(DE),
-    aes(fill = colour),
-    colour = "black",
-    shape = 23,
-    alpha = 1,
-    size = 1,
-    stroke = 0.3
-  ) +
-  scale_fill_manual(values = c("grey50", "grey80", "red")) +
-  scale_x_continuous(label = axis$chromosome, breaks = axis$center) +
-  scale_y_continuous(expand = c(0, 0)) +
-  coord_cartesian(clip = "off") +
-  labs(
-    x = "Chromosome",
-    y = expression(paste(-log[10], "(p)"))
-  ) +
-  theme(
-    legend.position="none",
-    panel.border = element_blank(),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor.x = element_blank(),
-    axis.text = element_text(size = rel(0.8)),
-    axis.title = element_text(size = rel(0.8))
-  )
-```
-
-```{r}
-tt <- topTables_chosen$APOE4v3_male
-man <- tt %>%
-  mutate(mid = (start + end) / 2) %>%
-  dplyr::select(gene_id, gene_name, chromosome, mid, FDR) %>%
-  dplyr::filter(!(chromosome %in% c("X", "Y", "MT"))) %>%
-  group_by(chromosome) %>%
-  summarise(chrLen = max(mid)) %>%
-  mutate(chrSt = cumsum(chrLen)-chrLen) %>%
-  dplyr::select(-chrLen) %>% 
-  left_join(tt) %>%
-  mutate(mid = (start + end) / 2) %>%
-  mutate(midCum = chrSt + mid) %>%
-  mutate(
-    colour = ifelse(chromosome %in% primary_chrs[c(TRUE, FALSE)], "a", "b"),
-    colour = ifelse(chromosome == "7", "c", colour)
-  )
-axis <- man %>%
-  group_by(chromosome) %>%
-  summarise(center = (max(midCum) + min(midCum)) / 2)
-b <- ggplot(man, aes(x = midCum, y = -log10(PValue))) +
-  geom_point(
-    data = man %>%
-      dplyr::filter(!DE),
-    aes(colour = colour),
-    shape = 20,
-    alpha = 1,
-    size = 1
-  ) +
-  scale_colour_manual(values = c("grey50", "grey80", "red")) +
-  geom_point(
-    data = man %>%
-      dplyr::filter(DE),
-    aes(fill = colour),
-    colour = "black",
-    shape = 23,
-    alpha = 1,
-    size = 1,
-    stroke = 0.3
-  ) +
-  scale_fill_manual(values = c("grey50", "grey80", "red")) +
-  scale_x_continuous(label = axis$chromosome, breaks = axis$center) +
-  scale_y_continuous(expand = c(0, 0)) +
-  coord_cartesian(clip = "off") +
-  labs(
-    x = "Chromosome",
-    y = expression(paste(-log[10], "(p)"))
-  ) +
-  theme(
-    legend.position="none",
-    panel.border = element_blank(),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor.x = element_blank(),
-    axis.text = element_text(size = rel(0.8)),
-    axis.title = element_text(size = rel(0.8))
-  )
-```
-
-```{r}
-ggarrange(a, b, ncol = 1, labels = "AUTO")
-```
-
-```{r}
-ggsave(
-  "~/phd/publications/fisher/figures/figure_3.png",
-  device = "png",
-  width = 18,
-  height = 12,
-  units = "cm"
-)
-```
-

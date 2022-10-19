@@ -151,7 +151,7 @@ ggarrange(a, b, ncol = 1, labels = "AUTO")
 
 ```{r}
 ggsave(
-  "~/phd/publications/fisher_pub/figures/figure_3_015.png",
+  "~/phd/publications/fisher_pub/figures/figure_3.png",
   device = "png",
   width = 18,
   height = 12,

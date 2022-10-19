@@ -302,7 +302,7 @@ Here the null hypothesis, $H_0$, is testing that the true values of the coeffici
 Due to the subtle effects of the mutation outlined in the PCA, genes were considered to be DE if they had an FDR-adjusted p-value < 0.05, as opposed to more stringent error rate controls such as the Bonferroni method.
 
 ```{r}
-alpha <- 0.15
+alpha <- 0.05
 minLfc <- 1
 fit <- estimateDisp(dgeList, design) %>%
   glmFit()
@@ -319,11 +319,12 @@ topTables <- colnames(contrasts) %>%
       mutate(
         contrast = x,
         bonfP = p.adjust(PValue, "bonf"),
-        DE = case_when(
-          bonfP < alpha ~ TRUE,
-          FDR < alpha & abs(logFC) > minLfc ~ TRUE
-        ),
-        DE = ifelse(is.na(DE), FALSE, DE)
+        DE = bonfP < alpha
+        # DE = case_when(
+        #   bonfP < alpha ~ TRUE,
+        #   FDR < alpha & abs(logFC) > minLfc ~ TRUE
+        # ),
+        # DE = ifelse(is.na(DE), FALSE, DE)
       )
   }, simplify = FALSE)
 ```
@@ -508,7 +509,7 @@ The x-axis of the PCA plot appears to be flipped, but this normal as the signs o
 After incorporation of the offset values into the `DGEList` object, dispersion estimates were calculated and models were fitted as done pre CQN.
 
 ```{r}
-alpha <- 0.15
+alpha <- 0.05
 minLfc <- 1
 fit_cqn <- estimateDisp(dgeList, design) %>%
   glmFit()
@@ -525,11 +526,12 @@ topTables_cqn <- colnames(contrasts) %>%
       mutate(
         contrast = x,
         bonfP = p.adjust(PValue, "bonf"),
-        DE = case_when(
-          bonfP < alpha ~ TRUE,
-          FDR < alpha & abs(logFC) > minLfc ~ TRUE
-        ),
-        DE = ifelse(is.na(DE), FALSE, DE)
+        DE = bonfP < alpha
+        # DE = case_when(
+        #   bonfP < alpha ~ TRUE,
+        #   FDR < alpha & abs(logFC) > minLfc ~ TRUE
+        # ),
+        # DE = ifelse(is.na(DE), FALSE, DE)
       )
   }, simplify = FALSE)
 ```

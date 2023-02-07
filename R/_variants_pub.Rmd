@@ -32,16 +32,16 @@ knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 
 ```{r}
 png(
-  filename = "~/phd/publications/fisher_pub/figures/figure_4.png",
+  filename = "~/phd/publications/fisher_pub/figures/main/dar_mouse.png",
   width = 32,
-  height = 16,
+  height = 18,
   units = "cm",
   res = 300
 )
 ```
 
 ```{r}
-ind <- 1
+ind <- 2
 chr <- 7
 genes_plot <- genes[deGenes[[ind]]$gene_id]
 mutation <- genes[genes$gene_name == "Apoe"]
@@ -49,7 +49,7 @@ dist <- allele_dist[[ind]]
 dist_type <- "l"
 dist_trans <- 1
 highlight_genes <- TRUE
-lfc <- lfc[[ind]]
+lfc_plot <- lfc[[ind]]
 lfc_type <- "heatmap"
 lfc_trans <- 1/3
 
@@ -92,14 +92,16 @@ if (length(genes_plot)) {
   genes_plot <- genes_plot %>%
     plyranges::filter(seqnames == chr) %>%
     plyranges::mutate(symbol = gene_name)
-  gene_track <- GeneRegionTrack(
+  gene_track <- AnnotationTrack(
     range = genes_plot,
     name = "DE",
-    transcriptAnnotation = "symbol",
-    showTranscriptId = TRUE,
+    shape = "box",
+    fill = "darkgray",
+    group = genes_plot$gene_name,
+    groupAnnotation = "group",
     fontcolor.group = 1,
-    cex.group = 0.5,
-    size = 0.3
+    cex.group = 0.6,
+    size = 0.2
   )
   tracks <- append(tracks, gene_track)
 }
@@ -129,28 +131,28 @@ if (highlight_genes) {
   dist_track <- HighlightTrack(
     trackList = list(dist_track),
     range = c(genes_plot, mutation),
-    col = c(rep("#ffd1d1", length(genes_plot)), rep("red", length(mutation))),
-    fill = c(rep("#ffd1d1", length(genes_plot)), rep("red", length(mutation)))
+    col = c(rep("#ffe0e0", length(genes_plot)), rep("red", length(mutation))),
+    fill = c(rep("#ffe0e0", length(genes_plot)), rep("red", length(mutation)))
   )
 }
 tracks <- append(tracks, dist_track)
 
-if (length(lfc)) {
-  lfc_track <- lfc[,"lfc_rollmean"] %>%
-    plyranges::filter(seqnames == chr) %>%
-    DataTrack(
-      type = lfc_type,
-      name = paste0("abs.logFC^(1/3)"),
-      size = 2,
-      window = -1,
-      windowSize = 1,
-      col.axis = "black",
-      showColorBar = TRUE,
-      gradient = viridis(100, option = "D"),
-      transformation = function(x){x^(lfc_trans)}
-    )
-  tracks <- append(tracks, lfc_track)
-}
+# if (length(lfc_plot)) {
+#   lfc_track <- lfc_plot[,"lfc_rollmean"] %>%
+#     plyranges::filter(seqnames == chr) %>%
+#     DataTrack(
+#       type = lfc_type,
+#       name = paste0("abs.logFC^(1/3)"),
+#       size = 2,
+#       window = -1,
+#       windowSize = 1,
+#       col.axis = "black",
+#       showColorBar = TRUE,
+#       gradient = viridis(100, option = "B"),
+#       transformation = function(x){x^(lfc_trans)}
+#     )
+#   tracks <- append(tracks, lfc_track)
+# }
 
 plotTracks(
   trackList = tracks,
@@ -165,7 +167,7 @@ plotTracks(
 dev.off()
 ```
 
-# Supp 1 - Elastic window sizes
+# Supp 2 - Elastic window sizes
 
 ```{r}
 lapply(seq_along(allele_dist), function(ind){
@@ -177,23 +179,24 @@ lapply(seq_along(allele_dist), function(ind){
     )
 }) %>%
   bind_rows() %>%
+  mutate(comparison = str_replace(comparison, "_", " ")) %>%
   ggplot(aes(win_size)) +
   geom_histogram(
     bins = 100,
     colour = "black",
     fill = "grey70"
   ) +
-  scale_x_log10() +
+  scale_x_log10(labels = function(x){x/1000}) +
   facet_wrap(~comparison, ncol = 2) +
   labs(
-    x = "Window size (bp)",
+    x = "Window size (kb)",
     y = "Count"
   )
 ```
 
 ```{r}
 ggsave(
-  "~/phd/publications/fisher_pub/figures/supp_1.png",
+  "~/phd/publications/fisher_pub/figures/supp/window_sizes.png",
   device = "png",
   width = 18,
   height = 12,
@@ -201,10 +204,10 @@ ggsave(
 )
 ```
 
-# Supp 2 - Cumulative distribution of DAR
+# Supp 3 - Cumulative distribution of DAR
 
 ```{r}
-allele_dist[[1]] %>%
+allele_dist[[2]] %>%
   split(seqnames(.)) %>%
   lapply(function(chr){
     tibble(
@@ -226,20 +229,24 @@ allele_dist[[1]] %>%
   ) %>%
   ggplot(aes(x = div, group = chromosome, colour = mutant_chromosome)) +
   stat_ecdf() +
-  scale_colour_manual(values = c("grey50", "red")) +
+  scale_x_continuous(breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+  scale_colour_manual(values = c("grey30", "red")) +
   labs(
-    title = names(allele_dist[1]),
     x = "DAR",
     y = "F(DAR)"
+  ) +
+  guides(
+    colour = guide_legend(title = "Mutation-bearing\nchromosome", reverse = TRUE)
   )
 ```
 
 ```{r}
 ggsave(
-  "~/phd/publications/fisher_pub/figures/supp_2.png",
+  "~/phd/publications/fisher_pub/figures/supp/darCumDist_apoe2v3f.png",
   device = "png",
   width = 18,
-  height = 8,
+  height = 10,
   units = "cm"
 )
 ```

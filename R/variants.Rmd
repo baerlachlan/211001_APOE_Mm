@@ -167,10 +167,9 @@ deGenes <- sapply(topDE, dplyr::filter, DE, simplify = FALSE)
 
 ```{r vcf}
 vcf_file <- file.path(
-  "/hpcfs/users/a1647910/211001_APOE_Mm",
-  "analysis-variants/results/07_variants/6_select/all_samples.vcf.gz"
+  "/hpcfs/users/a1647910/211001_APOE_Mm/analysis-variants_new/results/07_variants/5_filter/all_samples.vcf.gz"
 )
-svp <- ScanVcfParam(info = "", geno = c("GT", "GQ"))
+svp <- ScanVcfParam(fixed = c("FILTER"), info = NA, geno = c("GT", "GQ"))
 vcf <- suppressWarnings({
   readVcf(vcf_file, param = svp)
 })
@@ -178,11 +177,18 @@ vcf <- suppressWarnings({
 
 ```{r gr}
 gr <- rowRanges(vcf)
-mcols(gr) <- NULL
+mcols(gr) <- mcols(gr) %>%
+  as_tibble() %>%
+  dplyr::select(-paramRangeID)
 gr <- gr %>%
   as.data.frame() %>%
   droplevels() %>%
   GRanges()
+```
+
+```{r}
+ngr <- gr
+mcols(ngr) <- cbind(mcols(ngr), geno(vcf)$GT)
 ```
 
 ```{r gt}

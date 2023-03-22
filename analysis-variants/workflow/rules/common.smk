@@ -6,6 +6,8 @@ if not config["umi"]["activate"]:
     config["umi"]["add_header"]["activate"] = False
 if not config["umi"]["add_header"]["activate"]:
     config["umi"]["add_header"]["tag"] = [""]
+if not config["paired_end"]["activate"]:
+    config["paired_end"]["tags"] = [""]
 if not config["merge_samples"]["activate"]:
     config["merge_samples"]["tags"] = [""]
 
@@ -13,78 +15,28 @@ if not config["merge_samples"]["activate"]:
 ## Directory structure
 ####
 
-## Define dir indexes
-raw_ind = 0
-addUmis_ind = 1
-trim_ind = 2
-align_ind = 3
-addRG_ind = 4
-groupUmis_ind = 5
-mergeSamples_ind = 6
-markDuplicates_ind = 7
-splitNCigar_ind = 8
-knownVariants_ind = 9
-bqsr_ind = 10
-variants_ind = 11
-wasp_ind = 12
-aseRC_ind = 13
-## Index decreases by 1 for any steps following optional steps that are not run
+## Define list of all possible directories in workflow
+dir_list = [
+    "rawData", "addUmis", "trim", "align", "addRG", "groupUmis", "mergeSamples",
+    "markDuplicates", "splitNCigar", "knownVariants", "bqsr", "variants",
+    "wasp", "aseRC",
+]
+## Remove directories not required as defined by workflow config
 if not config["umi"]["add_header"]["activate"]:
-    trim_ind -= 1
-    align_ind -= 1
-    addRG_ind -= 1
-    mergeSamples_ind -= 1
-    groupUmis_ind -= 1
-    markDuplicates_ind -= 1
-    splitNCigar_ind -= 1
-    knownVariants_ind -= 1
-    bqsr_ind -= 1
-    variants_ind -= 1
-    wasp_ind -= 1
-    aseRC_ind -= 1
+    dir_list.remove("addUmis")
 if not config["umi"]["activate"]:
-    mergeSamples_ind -= 1
-    markDuplicates_ind -= 1
-    splitNCigar_ind -= 1
-    knownVariants_ind -= 1
-    bqsr_ind -= 1
-    variants_ind -= 1
-    wasp_ind -= 1
-    aseRC_ind -= 1
+    dir_list.remove("groupUmis")
 if not config["merge_samples"]["activate"]:
-    markDuplicates_ind -= 1
-    splitNCigar_ind -= 1
-    knownVariants_ind -= 1
-    bqsr_ind -= 1
-    variants_ind -= 1
-    wasp_ind -= 1
-    aseRC_ind -= 1
+    dir_list.remove("mergeSamples")
 if not config["bootstrap_known_variants"]["activate"]:
-    bqsr_ind -= 1
-    variants_ind -= 1
-    wasp_ind -= 1
-    aseRC_ind -= 1
-
-## Build dir names
-raw_dir = str(raw_ind).zfill(2) + "_rawData"
-trim_dir = str(trim_ind).zfill(2) + "_trim"
-align_dir = str(align_ind).zfill(2) + "_align"
-addRG_dir = str(addRG_ind).zfill(2) + "_addRG"
-markDuplicates_dir = str(markDuplicates_ind).zfill(2) + "_markDuplicates"
-splitNCigar_dir = str(splitNCigar_ind).zfill(2) + "_splitNCigar"
-bqsr_dir = str(bqsr_ind).zfill(2) + "_bqsr"
-variants_dir = str(variants_ind).zfill(2) + "_variants"
-if config["umi"]["add_header"]["activate"]:
-    addUmis_dir = str(addUmis_ind).zfill(2) + "_addUmis"
-if config["umi"]["activate"]:
-    groupUmis_dir = str(groupUmis_ind).zfill(2) + "_groupUmis"
-if config["merge_samples"]["activate"]:
-    mergeSamples_dir = str(mergeSamples_ind).zfill(2) + "_mergeSamples"
-if config["bootstrap_known_variants"]["activate"]:
-    knownVariants_dir = str(knownVariants_ind).zfill(2) + "_knownVariants"
-if config["ase_counts"]["activate"]:
-    wasp_dir = str(wasp_ind).zfill(2) + "_wasp"
-    aseRC_dir = str(aseRC_ind).zfill(2) + "_aseRC"
+    dir_list.remove("knownVariants")
+if not config["ase_counts"]["activate"]:
+    dir_list.remove("wasp")
+    dir_list.remove("aseRC")
+## Generate the directory ordering structure from list indices
+glob_vars = vars()
+for dir_name in dir_list:
+    glob_vars[dir_name + "_dir"] = str(dir_list.index(dir_name)).zfill(2) + "_" + dir_name
 
 ####
 ## Sample names
@@ -94,15 +46,17 @@ if config["samples_tsv"]:
     samples_df = pd.read_csv(config["samples_tsv"], sep="\t")
     samples = list(dict.fromkeys(samples_df["sample"])) ## Remove duplicates
 else:
-    samples = os.listdir(os.path.join("results", raw_dir, "fastq"))
+    samples = os.listdir(os.path.join("results", rawData_dir, "fastq"))
     samples = [
         sample.replace(config["fastq_ext"], "") for sample in samples
     ]
-    for tag in config["pair_tags"]:
+    for tag in config["paired_end"]["tags"]:
         samples = [sample.replace(tag, "") for sample in samples]
     if config["merge_samples"]["activate"]:
         for tag in config["merge_samples"]["tags"]:
             samples = [sample.replace(tag, "") for sample in samples]
+    if config["umi"]["add_header"]["activate"]:
+        samples = [sample.replace(config["umi"]["add_header"]["tag"], "") for sample in samples]
     samples = list(dict.fromkeys(samples))  ## Remove duplicates
 
 ####
@@ -157,19 +111,29 @@ knownVariants_url = os.path.join(
 ## Input functions for rules affected by optional rules
 ####
 
-def trim_inputs(wildcards):
+def trim_inputs_se(wildcards):
     return {
         "R1": os.path.join(
             "results",
-            addUmis_dir if config["umi"]["add_header"]["activate"] else raw_dir,
+            addUmis_dir if config["umi"]["add_header"]["activate"] else rawData_dir,
             "fastq",
-            wildcards.SAMPLE + wildcards.MERGETAG + config["pair_tags"][0] + config["fastq_ext"]
+            wildcards.SAMPLE + wildcards.MERGETAG + config["fastq_ext"]
+        ),
+    }
+
+def trim_inputs_pe(wildcards):
+    return {
+        "R1": os.path.join(
+            "results",
+            addUmis_dir if config["umi"]["add_header"]["activate"] else rawData_dir,
+            "fastq",
+            wildcards.SAMPLE + wildcards.MERGETAG + config["paired_end"]["tags"][0] + config["fastq_ext"]
         ),
         "R2": os.path.join(
             "results",
-            addUmis_dir if config["umi"]["add_header"]["activate"] else raw_dir,
+            addUmis_dir if config["umi"]["add_header"]["activate"] else rawData_dir,
             "fastq",
-            wildcards.SAMPLE + wildcards.MERGETAG + config["pair_tags"][1] + config["fastq_ext"]
+            wildcards.SAMPLE + wildcards.MERGETAG + config["paired_end"]["tags"][1] + config["fastq_ext"]
         ),
     }
 
@@ -211,22 +175,6 @@ def markDuplicates_inputs(wildcards):
         ),
     }
 
-def addRG_outputs(wildcards):
-    return {
-        "bam" : os.path.join(
-            "results",
-            addRG_dir,
-            "bam",
-            wildcards.SAMPLE + wildcards.MERGETAG + ".bam"
-        ),
-        "bam" : os.path.join(
-            "results",
-            addRG_dir,
-            "bam",
-            wildcards.SAMPLE + wildcards.MERGETAG + ".bam.bai"
-        ),
-    }
-
 def knownVariants_files(wildcards):
     if config["bootstrap_known_variants"]["activate"]:
         return {
@@ -259,10 +207,10 @@ def workflow_outputs():
 
     ## FastQC reports
     fqc_raw = expand(
-        os.path.join("results", raw_dir, "FastQC/{SAMPLE}{MERGETAG}{PAIRTAG}_fastqc.{EXT}"),
+        os.path.join("results", rawData_dir, "FastQC/{SAMPLE}{MERGETAG}{PAIRTAG}_fastqc.{EXT}"),
         SAMPLE=samples,
         MERGETAG=config["merge_samples"]["tags"],
-        PAIRTAG=config["pair_tags"],
+        PAIRTAG=config["paired_end"]["tags"],
         EXT=["html", "zip"]
     )
     outputs.extend(fqc_raw)
@@ -270,7 +218,7 @@ def workflow_outputs():
         os.path.join("results", trim_dir, "FastQC/{SAMPLE}{MERGETAG}{PAIRTAG}_fastqc.{EXT}"),
         SAMPLE=samples,
         MERGETAG=config["merge_samples"]["tags"],
-        PAIRTAG=config["pair_tags"],
+        PAIRTAG=config["paired_end"]["tags"],
         EXT=["html", "zip"]
     )
     outputs.extend(fqc_trim)

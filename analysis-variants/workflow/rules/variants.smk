@@ -43,7 +43,7 @@ rule variants_gvcf:
 
 rule variants_sampleMap:
     input:
-        expand(rules.variants_gvcf.output.gvcf, SAMPLE=samples),
+        expand(os.path.join("results", variants_dir, "1_gvcf", "{SAMPLE}.g.vcf.gz"), SAMPLE=samples),
     output:
         os.path.join("results", variants_dir, "sample_map.tsv"),
     params:
@@ -75,7 +75,7 @@ rule variants_genomicsDB:
         time = "01-00:00:00",
     shell:
         """
-        gatk --java-options "-Xmx4g -Xms4g -DGATK_STACKTRACE_ON_USER_EXCEPTION=true" \
+        gatk --java-options "-Xmx4g -Xms4g" \
             GenomicsDBImport \
                 --genomicsdb-workspace-path {output.genDB_dir} \
                 --intervals {input.intervals} \
@@ -92,8 +92,8 @@ rule variants_genotype:
         refIndex = rules.refs_refIndex.output,
         refDict = rules.refs_refDict.output,
     output:
-        vcf = temp(os.path.join("results", variants_dir, "3_jointGenotype", "all_samples.vcf.gz")),
-        vcfIndex = temp(os.path.join("results", variants_dir, "3_jointGenotype", "all_samples.vcf.gz.tbi")),
+        vcf = os.path.join("results", variants_dir, "3_jointGenotype", "all_samples.vcf.gz"),
+        vcfIndex = os.path.join("results", variants_dir, "3_jointGenotype", "all_samples.vcf.gz.tbi"),
         detailMetrics = os.path.join("results", variants_dir, "3_jointGenotype", "log", "all_samples.variant_calling_detail_metrics"),
         summaryMetrics = os.path.join("results", variants_dir, "3_jointGenotype", "log", "all_samples.variant_calling_summary_metrics"),
     params:
@@ -168,8 +168,8 @@ rule variants_filter:
         refIndex = rules.refs_refIndex.output,
         refDict = rules.refs_refDict.output,
     output:
-        vcf = temp(os.path.join("results", variants_dir, "5_filter", "all_samples.vcf.gz")),
-        vcfIndex = temp(os.path.join("results", variants_dir, "5_filter", "all_samples.vcf.gz.tbi")),
+        vcf = os.path.join("results", variants_dir, "5_filter", "all_samples.vcf.gz"),
+        vcfIndex = os.path.join("results", variants_dir, "5_filter", "all_samples.vcf.gz.tbi"),
         detailMetrics = os.path.join("results", variants_dir, "5_filter", "log", "all_samples.variant_calling_detail_metrics"),
         summaryMetrics = os.path.join("results", variants_dir, "5_filter", "log", "all_samples.variant_calling_summary_metrics"),
     params:

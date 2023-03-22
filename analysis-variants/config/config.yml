@@ -2,7 +2,9 @@ samples_tsv:
 
 fastq_ext: ".fastq.gz"
 
-pair_tags: [".bam_R1", ".bam_R2"]
+paired_end:
+  activate: True
+  tags: [".bam_R1", ".bam_R2"]
 
 ref:
   species: "mus_musculus"
@@ -16,14 +18,14 @@ umi:
   activate: False
   add_header:
     activate: False
-    tag:
+    tag: [""]
 
 merge_samples:
   activate: False
-  tags:
+  tags: [""]
 
 bootstrap_known_variants:
   activate: False
 
 ase_counts:
-  activate: True
+  activate: False

@@ -103,7 +103,7 @@ rule refs_knownVariantsIndex:
     input:
         rules.refs_downloadKnownVariants.output,
     output:
-        temp(knownVariants_path + ".tbi"),
+        knownVariants_path + ".tbi",
     conda:
         "../envs/gatk.yml"
     resources:

@@ -4,20 +4,22 @@ library(tibble)
 library(AnnotationHub)
 
 ## Setup to allow user to run interactively or as part of snakemake workflow
-if (exists("snakemake")) {
+if (!exists("snakemake")) {
+  ############################################################
+  ## Edit these variables manually if running interactively ##
+  ############################################################
+  ens_species <- "Mus musculus"
+  ens_release <- "104"
+  intervalFile <- dirname(rstudioapi::getSourceEditorContext()$path) %>%
+    str_remove("workflow/scripts") %>%
+    paste0("resources/exons.intervals")
+} else {
   ens_species <- snakemake@params[["species"]] %>%
     str_replace("_", " ") %>%
     str_to_sentence()
   ens_release <- snakemake@params[["ensembl_release"]] %>%
     as.character()
   intervalFile <- "resources/exons.intervals"
-} else {
-  ## Edit these variables manually if running interactively
-  ens_species <- "Mus musculus"
-  ens_release <- "104"
-  intervalFile <- dirname(rstudioapi::getSourceEditorContext()$path) %>%
-    str_remove("workflow/scripts") %>%
-    paste0("resources/exons.intervals")
 }
 
 ## Restrict sequences to primary assembly

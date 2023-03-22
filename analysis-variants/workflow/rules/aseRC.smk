@@ -4,8 +4,6 @@ rule aseRC:
         bamIndex = rules.wasp_merge.output.keep_sortedIndex,
         vcf = rules.variants_select.output.vcf,
         refFa = rules.refs_downloadFa.output,
-        refIndex = rules.refs_refIndex.output,
-        refDict = rules.refs_refDict.output,
         intervals = os.path.join("results", aseRC_dir, "intervals", "{SAMPLE}.intervals")
     output:
         tsv = os.path.join("results", aseRC_dir, "wasp", "{SAMPLE}.tsv"),
@@ -35,8 +33,6 @@ rule aseRC_nowasp:
         bamIndex = rules.bqsr_apply.output.bamIndex,
         vcf = rules.variants_select.output.vcf,
         refFa = rules.refs_downloadFa.output,
-        refIndex = rules.refs_refIndex.output,
-        refDict = rules.refs_refDict.output,
         intervals = os.path.join("results", aseRC_dir, "intervals", "{SAMPLE}.intervals")
     output:
         tsv = os.path.join("results", aseRC_dir, "no_wasp", "{SAMPLE}.tsv"),

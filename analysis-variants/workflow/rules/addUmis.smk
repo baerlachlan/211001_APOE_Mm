@@ -1,14 +1,14 @@
 rule addUmis:
 	input:
-		R1 = os.path.join(raw_dir, "fastq", "{SAMPLE}{MERGETAG, .*}" + config["pair_tags"][0] + config["fastq_ext"]),
-		R2 = os.path.join(raw_dir, "fastq", "{SAMPLE}{MERGETAG, .*}" + config["pair_tags"][1] + config["fastq_ext"]),
-		UMI = os.path.join(raw_dir, "fastq", "{SAMPLE}{MERGETAG, .*}" + config["umi"]["add_header"]["tag"] + config["fastq_ext"]),
+		R1 = os.path.join("results", rawData_dir, "fastq", "{SAMPLE}" + config["paired_end"]["tags"][0] + config["fastq_ext"]),
+		R2 = os.path.join("results", rawData_dir, "fastq", "{SAMPLE}" + config["paired_end"]["tags"][1] + config["fastq_ext"]),
+		UMI = os.path.join("results", rawData_dir, "fastq", "{SAMPLE}" + config["umi"]["add_header"]["tag"] + config["fastq_ext"]),
 	output:
-		R1 = temp(os.path.join(addUmis_dir, "fastq", "{SAMPLE}{MERGETAG, .*}" + config["pair_tags"][0] + config["fastq_ext"])),
-		R2 = temp(os.path.join(addUmis_dir, "fastq", "{SAMPLE}{MERGETAG, .*}" + config["pair_tags"][1] + config["fastq_ext"])),
-		UMI1 = temp(os.path.join(addUmis_dir, "fastq", "{SAMPLE}{MERGETAG, .*}_I1" + config["fastq_ext"])),
-		UMI2 = temp(os.path.join(addUmis_dir, "fastq", "{SAMPLE}{MERGETAG, .*}_I2" + config["fastq_ext"])),
-		html = os.path.join(addUmis_dir, "log", "{SAMPLE}{MERGETAG, .*}.html"),
+		R1 = temp(os.path.join("results", addUmis_dir, "fastq", "{SAMPLE}" + config["paired_end"]["tags"][0] + config["fastq_ext"])),
+		R2 = temp(os.path.join("results", addUmis_dir, "fastq", "{SAMPLE}" + config["paired_end"]["tags"][1] + config["fastq_ext"])),
+		UMI1 = temp(os.path.join("results", addUmis_dir, "fastq", "{SAMPLE}_I1" + config["fastq_ext"])),
+		UMI2 = temp(os.path.join("results", addUmis_dir, "fastq", "{SAMPLE}_I2" + config["fastq_ext"])),
+		html = os.path.join("results", addUmis_dir, "log", "{SAMPLE}.html"),
 	conda:
 		"../envs/gatk.yml"
 	resources:

@@ -24,7 +24,7 @@ SN	total length:	3473251909	# ignores clipping
 SN	total first fragment length:	1736626551	# ignores clipping
 SN	total last fragment length:	1736625358	# ignores clipping
 SN	bases mapped:	3473251909	# ignores clipping
-SN	bases mapped (cigar):	3460294410	# more accurate
+SN	bases mapped (cigar):	3460294257	# more accurate
 SN	bases trimmed:	0
 SN	bases duplicated:	0
 SN	mismatches:	0	# from NM fields

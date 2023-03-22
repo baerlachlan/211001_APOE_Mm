@@ -48,7 +48,7 @@ rule wasp_remap:
     resources:
         cpu = 16,
         ntasks = 1,
-        mem_mb = 48000,
+        mem_mb = 32000,
         time = "00-04:00:00",
     shell:
         """
@@ -62,7 +62,7 @@ rule wasp_remap:
             --twopassMode Basic \
             --outFileNamePrefix {params.bname}
 
-        mkdir -p {params.wasp_dir}/log
+        mkdir -p 08_wasp/3_remap/log
         mv {params.bname}*out {params.wasp_dir}/log
         mv {params.bname}*tab {params.wasp_dir}/log
 

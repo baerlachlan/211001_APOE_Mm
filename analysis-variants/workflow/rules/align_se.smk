@@ -1,7 +1,6 @@
-rule align:
+rule align_se:
     input:
-        R1 = rules.trim.output.R1,
-        R2 = rules.trim.output.R2,
+        R1 = rules.trim_se.output.R1,
         starIndex = rules.refs_starIndex.output,
     output:
         bam = temp(os.path.join("results", align_dir, "bam", "{SAMPLE}{MERGETAG, .*}.bam")),
@@ -18,14 +17,14 @@ rule align:
     resources:
         cpu = 16,
         ntasks = 1,
-        mem_mb = 48000,
+        mem_mb = 32000,
         time = "00-02:00:00",
     shell:
         """
         STAR \
             --genomeDir {input.starIndex}\
             --runThreadN {resources.cpu} \
-            --readFilesIn {input.R1} {input.R2} \
+            --readFilesIn {input.R1} \
             --readFilesCommand "gunzip -c" \
             --sjdbOverhang {params.overhang} \
             --outSAMtype BAM Unsorted \

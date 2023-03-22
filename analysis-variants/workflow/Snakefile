@@ -7,25 +7,28 @@ min_version("6.2.1")
 
 configfile: "config/config.yml"
 
-include: "rules/setup.smk"
+include: "rules/common.smk"
 
 ## Avoid ambiguity in filenames when multiple wildcards are used
 wildcard_constraints:
-    SAMPLE = "|".join([sample for sample in samples]),
-    PAIRTAG = "|".join([tag for tag in config['pair_tags']]),
-    MERGETAG = "|".join([tag for tag in config['merge_samples']['tags']]),
+    SAMPLE = "|".join(samples),
+    PAIRTAG = "|".join(config["paired_end"]["tags"]) if config["paired_end"]["activate"] else ".*",
+    MERGETAG = "|".join(config["merge_samples"]["tags"]) if config["merge_samples"]["activate"] else ".*",
 
 rule all:
     input:
         workflow_outputs(),
-        # expand("13_geneiase/2_ase/{SAMPLE}.static.pval.tsv", SAMPLE=samples)
 
 include: "rules/refs.smk"
 include: "rules/intervals.smk"
 if config["umi"]["add_header"]["activate"]:
     include: "rules/addUmis.smk"
-include: "rules/trim.smk"
-include: "rules/align.smk"
+if config["paired_end"]["activate"]:
+    include: "rules/trim_pe.smk"
+    include: "rules/align_pe.smk"
+else:
+    include: "rules/trim_se.smk"
+    include: "rules/align_se.smk"
 include: "rules/fastqc.smk"
 include: "rules/addRG.smk"
 if config["umi"]["activate"]:
@@ -49,7 +52,7 @@ if config["ase_counts"]["activate"]:
 
 localrules: refs_downloadFa, refs_downloadGtf, refs_downloadKnownVariants  ## Requires internet access but not much compute so run on head node
 
-## To do:
+## TODO:
 ##  - Remove HOME=/hpcfs/users/$USER
 ##  - Remove curl from refs.smk
 ##  - gatk java options

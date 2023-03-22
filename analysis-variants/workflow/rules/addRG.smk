@@ -1,12 +1,11 @@
 rule addRG:
     input:
-        bam = rules.align.output.bam,
-        bamIndex = rules.align.output.bamIndex,
+        bam = os.path.join("results", align_dir, "bam", "{SAMPLE}{MERGETAG, .*}.bam"),
+        bamIndex = os.path.join("results", align_dir, "bam", "{SAMPLE}{MERGETAG, .*}.bam.bai")
     output:
         bam = temp(os.path.join("results", addRG_dir, "bam", "{SAMPLE}{MERGETAG, .*}.bam")),
         bamIndex = temp(os.path.join("results", addRG_dir, "bam", "{SAMPLE}{MERGETAG, .*}.bam.bai")),
         samstats = os.path.join("results", addRG_dir, "samstats", "{SAMPLE}{MERGETAG, .*}.tsv"),
-        # unpack(addRG_outputs)
     # params:
     #     RGID = lambda wildcard: analysis.RGID[wildcard.SAMPLE],
     #     RGSM = lambda wildcard: analysis.RGSM[wildcard.SAMPLE],

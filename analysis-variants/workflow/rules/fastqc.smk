@@ -1,10 +1,10 @@
 rule fastqc_raw:
     input:
-        os.path.join("results", raw_dir, "fastq", "{SAMPLE}{MERGETAG, .*}{PAIRTAG}" + config["fastq_ext"]),
+        os.path.join("results", rawData_dir, "fastq", "{SAMPLE}{MERGETAG, .*}{PAIRTAG, .*}" + config["fastq_ext"]),
     output:
-        multiext(os.path.join("results", raw_dir, "FastQC", "{SAMPLE}{MERGETAG, .*}{PAIRTAG}_fastqc"), ".zip", ".html"),
+        multiext(os.path.join("results", rawData_dir, "FastQC", "{SAMPLE}{MERGETAG, .*}{PAIRTAG, .*}_fastqc"), ".zip", ".html"),
     params:
-        outDir = os.path.join("results", raw_dir, "FastQC"),
+        outDir = os.path.join("results", rawData_dir, "FastQC"),
     conda:
         "../envs/gatk.yml"
     resources:
@@ -17,9 +17,9 @@ rule fastqc_raw:
 
 rule fastqc_trim:
     input:
-        os.path.join("results", trim_dir, "fastq", "{SAMPLE}{MERGETAG, .*}{PAIRTAG}" + config["fastq_ext"]),
+        os.path.join("results", trim_dir, "fastq", "{SAMPLE}{MERGETAG, .*}{PAIRTAG, .*}" + config["fastq_ext"]),
     output:
-        multiext(os.path.join("results", trim_dir, "FastQC", "{SAMPLE}{MERGETAG, .*}{PAIRTAG}_fastqc"), ".zip", ".html"),
+        multiext(os.path.join("results", trim_dir, "FastQC", "{SAMPLE}{MERGETAG, .*}{PAIRTAG, .*}_fastqc"), ".zip", ".html"),
     params:
         outDir = os.path.join("results", trim_dir, "FastQC"),
     conda:
@@ -37,7 +37,7 @@ rule fastqc_trim:
 
 rule fastqc_align:
     input:
-        rules.align.output.bam,
+        os.path.join("results", align_dir, "bam", "{SAMPLE}{MERGETAG, .*}.bam"),
     output:
         multiext(os.path.join("results", align_dir, "FastQC", "{SAMPLE}{MERGETAG, .*}_fastqc"), ".zip", ".html"),
     params:

@@ -22,4 +22,4 @@ latency-wait: 60
 rerun-incomplete: True
 printshellcmds: True
 scheduler: greedy
-notemp: False  ## If storage quotas permit, I prefer to hold temp files and use --delete-temp-output upon completion
+notemp: False  ## False will delete files declared with temp()

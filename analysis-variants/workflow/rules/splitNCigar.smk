@@ -14,7 +14,7 @@ rule splitNCigar:
     resources:
         cpu = 8,
         ntasks = 1,
-        mem_mb = 32000,
+        mem_mb = 64000,
         time = "00-08:00:00",
     shell:
         """

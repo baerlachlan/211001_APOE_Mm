@@ -8,8 +8,8 @@ navbar:
       href: index.html
     - text: DE
       href: de.html
-    - text: Variants
-      href: variants.html
+    - text: DAR
+      href: dar.html
     - text: Enrichment
       href: enrichment.html
   right:

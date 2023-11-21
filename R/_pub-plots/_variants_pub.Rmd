@@ -28,7 +28,7 @@ knitr::opts_chunk$set(
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 ```
 
-# Figure 4 - DAR along chromosome 7
+# Main - DAR along chromosome 7 males
 
 ```{r}
 png(
@@ -43,15 +43,12 @@ png(
 ```{r}
 ind <- 2
 chr <- 7
-genes_plot <- genes[deGenes[[ind]]$gene_id]
+genes_plot <- genes[deGenes[[ind]]]
 mutation <- genes[genes$gene_name == "Apoe"]
-dist <- allele_dist[[ind]]
+dist <- DAR[[ind]]
 dist_type <- "b"
 dist_trans <- 1
 highlight_genes <- TRUE
-lfc_plot <- lfc[[ind]]
-lfc_type <- "heatmap"
-lfc_trans <- 1/3
 
 tracks <- list()
 
@@ -106,7 +103,7 @@ if (length(genes_plot)) {
   tracks <- append(tracks, gene_track)
 }
 
-dist_track <- dist[,"diversity"] %>%
+dist_track <- dist[,"dar_smooth"] %>%
   plyranges::filter(seqnames == chr) %>%
   DataTrack(
     type = dist_type,
@@ -138,22 +135,125 @@ if (highlight_genes) {
 }
 tracks <- append(tracks, dist_track)
 
-# if (length(lfc_plot)) {
-#   lfc_track <- lfc_plot[,"lfc_rollmean"] %>%
-#     plyranges::filter(seqnames == chr) %>%
-#     DataTrack(
-#       type = lfc_type,
-#       name = paste0("abs.logFC^(1/3)"),
-#       size = 2,
-#       window = -1,
-#       windowSize = 1,
-#       col.axis = "black",
-#       showColorBar = TRUE,
-#       gradient = viridis(100, option = "B"),
-#       transformation = function(x){x^(lfc_trans)}
-#     )
-#   tracks <- append(tracks, lfc_track)
-# }
+plotTracks(
+  trackList = tracks,
+  cex.main = 1,
+  cex.title = 0.6,
+  col.title = "black",
+  background.title = "white"
+)
+```
+
+```{r}
+dev.off()
+```
+
+# Supp - DAR along chromosome 7 females
+
+```{r}
+png(
+  filename = "~/phd/publications/fisher_pub/figures/supp/dar_mouse_females.png",
+  width = 32,
+  height = 24,
+  units = "cm",
+  res = 300
+)
+```
+
+```{r}
+ind <- 1
+chr <- 7
+genes_plot <- genes[deGenes[[ind]]]
+mutation <- genes[genes$gene_name == "Apoe"]
+dist <- DAR[[ind]]
+dist_type <- "b"
+dist_trans <- 1
+highlight_genes <- TRUE
+
+tracks <- list()
+
+if (length(mutation)) {
+  mutation <- mutation %>%
+    plyranges::filter(seqnames == chr) %>%
+    plyranges::mutate(symbol = gene_name)
+  mutant_track <- GeneRegionTrack(
+    range = mutation,
+    transcriptAnnotation = "symbol",
+    col = "white",
+    fill = "white",
+    showTranscriptId = TRUE,
+    fontcolor.group = "red",
+    cex.group = 0.6,
+    size = 0.5,
+    name = NULL
+  )
+  tracks <- append(tracks, mutant_track)
+}
+
+axis_track <- GenomeAxisTrack(
+  add53 = TRUE,
+  add35 = TRUE,
+  name = paste0("Chr", chr),
+  showTitle = TRUE,
+  size = 1
+)
+if (length(mutation)) {
+  axis_track <- HighlightTrack(
+    trackList = list(axis_track),
+    range = mutation
+  )
+}
+tracks <- append(tracks, axis_track)
+
+if (length(genes_plot)) {
+  genes_plot <- genes_plot %>%
+    plyranges::filter(seqnames == chr) %>%
+    plyranges::mutate(symbol = gene_name)
+  gene_track <- AnnotationTrack(
+    range = genes_plot,
+    name = "DE",
+    shape = "box",
+    fill = "darkgray",
+    group = genes_plot$gene_name,
+    groupAnnotation = "group",
+    fontcolor.group = 1,
+    cex.group = 0.8,
+    size = 0.4
+  )
+  tracks <- append(tracks, gene_track)
+}
+
+dist_track <- dist[,"dar_smooth"] %>%
+  plyranges::filter(seqnames == chr) %>%
+  DataTrack(
+    type = dist_type,
+    name = "DAR",
+    size = 8,
+    window = -1,
+    windowSize = 1,
+    cex = 0.4,
+    col = "grey20",
+    col.axis = "black",
+    yTicksAt = seq(0, 1, 0.1),
+    ylim = c(0, 1),
+    transformation = function(x){x^(dist_trans)}
+  )
+if (highlight_genes) {
+  if (all(length(genes_plot) & length(mutation))) {
+    ranges <- c(genes_plot, mutation)
+  } else if (length(genes_plot)) {
+    ranges <- genes_plot
+  } else if (length(mutation)) {
+    ranges <- mutation
+  }
+  dist_track <- HighlightTrack(
+    trackList = list(dist_track),
+    range = c(genes_plot, mutation),
+    col = c(rep("#ffe0e0", length(genes_plot)), rep("red", length(mutation))),
+    fill = c(rep("#ffe0e0", length(genes_plot)), rep("red", length(mutation)))
+  )
+}
+tracks <- append(tracks, dist_track)
 
 plotTracks(
   trackList = tracks,
@@ -168,15 +268,15 @@ plotTracks(
 dev.off()
 ```
 
-# Supp 2 - Elastic window sizes
+# Supp - Elastic window sizes
 
 ```{r}
-lapply(seq_along(allele_dist), function(ind){
-  allele_dist[[ind]] %>%
+lapply(seq_along(DAR), function(ind){
+  DAR[[ind]] %>%
     as_tibble() %>%
     dplyr::filter(!is.na(win_size)) %>%
     mutate(
-      comparison = factor(names(allele_dist[ind]), levels = names(allele_dist))
+      comparison = factor(names(DAR[ind]), levels = names(DAR))
     )
 }) %>%
   bind_rows() %>%
@@ -197,7 +297,7 @@ lapply(seq_along(allele_dist), function(ind){
 
 ```{r}
 ggsave(
-  "~/phd/publications/fisher_pub/figures/supp/window_sizes.png",
+  "~/phd/publications/fisher_pub/figures/supp/window_sizes_mouse.png",
   device = "png",
   width = 18,
   height = 12,
